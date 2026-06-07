@@ -1,0 +1,22 @@
+{
+  "name": "karabas-revo-tour-bot",
+  "version": "1.0.0",
+  "description": "Karabas Revo Tour - Telegram bot for collecting tour requests",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "keywords": ["telegram", "bot", "telegraf", "tour"],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "telegraf": "^4.16.3",
+    "dotenv": "^16.4.5",
+    "better-sqlite3": "^11.3.0",
+    "exceljs": "^4.4.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
