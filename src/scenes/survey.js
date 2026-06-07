@@ -18,6 +18,30 @@ const S = {
   ASK_PHONE: 'ask_phone',
 };
 
+// ============ VALIDATSIYA ============
+function isValidName(text) {
+  // Kamida 2 ta harf bo'lishi kerak (raqam yoki belgi emas)
+  if (text.length < 2) return false;
+  // Hech qanday harf yo'q bo'lsa — false
+  if (!/[a-zA-ZА-Яа-яЁёўғҳқЎҒҲҚʻ'`]/.test(text)) return false;
+  // Faqat raqamlardan iborat bo'lsa — false
+  if (/^[\d\s\W]+$/.test(text)) return false;
+  return true;
+}
+
+function isValidNumber(text) {
+  const num = parseInt(text.replace(/\s/g, ''));
+  return !isNaN(num) && num > 0 && num < 1000 && /^\d+$/.test(text.trim());
+}
+
+function isValidAges(text) {
+  // Faqat raqamlar, vergul, bo'shliqlar bo'lishi kerak
+  if (!/^[\d,\s]+$/.test(text)) return false;
+  // Kamida 1 ta raqam bo'lsin
+  if (!/\d/.test(text)) return false;
+  return true;
+}
+
 const survey = new Scenes.BaseScene(SURVEY_SCENE);
 
 survey.enter(async (ctx) => {
@@ -64,6 +88,7 @@ async function promptState(ctx, state) {
   }
 }
 
+// ============ KOMANDALAR (scene ichida ishlashi uchun) ============
 survey.command('start', async (ctx) => {
   await ctx.scene.leave();
   return ctx.scene.enter(SURVEY_SCENE);
@@ -74,6 +99,30 @@ survey.command(['til', 'language'], async (ctx) => {
   await ctx.reply(t(lang, 'chooseLanguage'), kb.languageInline());
 });
 
+survey.command('admin', async (ctx) => {
+  if (!dbApi.isAdmin(ctx.from.id)) {
+    return ctx.reply("❌ Sizda admin huquqlari yo'q.");
+  }
+  await ctx.scene.leave();
+  return ctx.scene.enter('admin');
+});
+
+survey.command('myid', async (ctx) => {
+  await ctx.reply('Sizning Telegram ID: `' + ctx.from.id + '`', { parse_mode: 'Markdown' });
+});
+
+survey.command('help', async (ctx) => {
+  const isAdmin = dbApi.isAdmin(ctx.from.id);
+  let msg = "/start - Boshlash\n/til - Tilni o'zgartirish\n/myid - Telegram ID";
+  if (isAdmin) msg += '\n/admin - Admin panel';
+  await ctx.reply(msg);
+});
+
+survey.command('chatid', async (ctx) => {
+  await ctx.reply('Chat ID: `' + ctx.chat.id + '`', { parse_mode: 'Markdown' });
+});
+
+// ============ TIL TANLASH ============
 survey.action(/^lang_(uz|ru)$/, async (ctx) => {
   const newLang = ctx.match[1];
   const wasFirstTime = ctx.session.state === S.PICK_LANG;
@@ -144,7 +193,8 @@ survey.on('text', async (ctx) => {
   const lang = ctx.session.lang || 'uz';
   const state = ctx.session.state;
 
-  if (text === '/start' || text === '/til' || text === '/language') return;
+  // Barcha komandalarni e'tibordan o'tkazib yuborish (ular yuqorida ishlanadi)
+  if (text.startsWith('/')) return;
 
   switch (state) {
     case S.PICK_LANG:
@@ -152,21 +202,34 @@ survey.on('text', async (ctx) => {
       break;
 
     case S.ASK_NAME:
+      if (!isValidName(text)) {
+        await ctx.reply(t(lang, 'invalidName'));
+        return;
+      }
       ctx.session.surveyData.full_name = text;
       await promptState(ctx, S.ASK_DEST);
       break;
 
     case S.ASK_DEST:
+      if (text.length < 2) {
+        await ctx.reply(t(lang, 'invalidName'));
+        return;
+      }
       ctx.session.surveyData.destination = text;
       await promptState(ctx, S.ASK_DATE);
       break;
 
     case S.ASK_DATE:
+      // Sana — har qanday format
       ctx.session.surveyData.travel_date = text;
       await promptState(ctx, S.ASK_PEOPLE);
       break;
 
     case S.ASK_PEOPLE:
+      if (!isValidNumber(text)) {
+        await ctx.reply(t(lang, 'invalidNumber'));
+        return;
+      }
       ctx.session.surveyData.people_count = text;
       await promptState(ctx, S.ASK_CHILDREN);
       break;
@@ -176,11 +239,19 @@ survey.on('text', async (ctx) => {
       break;
 
     case S.ASK_CHILDREN_COUNT:
+      if (!isValidNumber(text)) {
+        await ctx.reply(t(lang, 'invalidNumber'));
+        return;
+      }
       ctx.session.surveyData.children_count = text;
       await promptState(ctx, S.ASK_CHILDREN_AGES);
       break;
 
     case S.ASK_CHILDREN_AGES:
+      if (!isValidAges(text)) {
+        await ctx.reply(t(lang, 'invalidAges'), { parse_mode: 'Markdown' });
+        return;
+      }
       ctx.session.surveyData.children_ages = text;
       await promptState(ctx, S.ASK_TIME);
       break;
@@ -260,7 +331,6 @@ async function sendToGroup(ctx, data) {
         await ctx.telegram.sendMessage(altId, message);
         console.log('OK - Guruhga yuborildi (-100 prefix bilan): ' + altId);
         dbApi.setSetting('group_id', altId);
-        console.log('Yangi guruh ID saqlandi: ' + altId);
         return;
       } catch (err2) {
         console.error('XATO - ' + altId + ' ga ham yuborib bo\'lmadi: ' + err2.message);
@@ -272,13 +342,9 @@ async function sendToGroup(ctx, data) {
       if (superAdminId) {
         await ctx.telegram.sendMessage(
           superAdminId,
-          '⚠️ Guruhga xabar yuborib bo\'lmadi!\n\n' +
+          'Guruhga xabar yuborib bo\'lmadi!\n\n' +
           'Guruh ID: ' + groupId + '\n' +
-          'Xato: ' + err.message + '\n\n' +
-          'Sabablar:\n' +
-          '1. Bot guruhga qo\'shilmagan\n' +
-          '2. Bot adminlik huquqi yo\'q\n' +
-          '3. Guruh ID noto\'g\'ri (supergroup uchun -100 bilan boshlanishi kerak)'
+          'Xato: ' + err.message
         );
       }
     } catch (e) { /* ignore */ }
