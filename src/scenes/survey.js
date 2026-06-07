@@ -19,26 +19,48 @@ const S = {
 };
 
 // ============ VALIDATSIYA ============
+// Ism: kamida 3 ta belgi, faqat harflar/bo'shliq/apostrof/tire
 function isValidName(text) {
-  // Kamida 2 ta harf bo'lishi kerak (raqam yoki belgi emas)
-  if (text.length < 2) return false;
-  // Hech qanday harf yo'q bo'lsa — false
-  if (!/[a-zA-ZА-Яа-яЁёўғҳқЎҒҲҚʻ'`]/.test(text)) return false;
-  // Faqat raqamlardan iborat bo'lsa — false
+  if (text.length < 3 || text.length > 100) return false;
+  if (!/^[a-zA-ZА-Яа-яЁёўғҳқЎҒҲҚʻ'`\s\-]+$/.test(text)) return false;
+  // Kamida 2 ta harf bo'lishi kerak
+  const letters = text.match(/[a-zA-ZА-Яа-яЁёўғҳқЎҒҲҚ]/g);
+  return letters && letters.length >= 2;
+}
+
+// Yo'nalish: kamida 3 ta belgi, kamida 2 ta harf bo'lishi shart
+function isValidDestination(text) {
+  if (text.length < 3 || text.length > 100) return false;
+  const letters = text.match(/[a-zA-ZА-Яа-яЁёўғҳқЎҒҲҚ]/g);
+  if (!letters || letters.length < 2) return false;
+  // Faqat raqamlardan iborat bo'lmasligi kerak
   if (/^[\d\s\W]+$/.test(text)) return false;
   return true;
 }
 
-function isValidNumber(text) {
-  const num = parseInt(text.replace(/\s/g, ''));
-  return !isNaN(num) && num > 0 && num < 1000 && /^\d+$/.test(text.trim());
+// Sana: kamida 1 ta raqam bo'lishi shart, 3-50 belgi
+function isValidDate(text) {
+  if (text.length < 3 || text.length > 50) return false;
+  // Kamida 1 ta raqam bo'lsin
+  const digits = text.match(/\d/g);
+  if (!digits || digits.length < 1) return false;
+  // Faqat ruxsat etilgan belgilar: harflar, raqamlar, ., -, /, bo'shliq, vergul
+  if (!/^[a-zA-ZА-Яа-яЁёўғҳқЎҒҲҚ0-9\.\-\/\s,]+$/.test(text)) return false;
+  return true;
 }
 
+// Son: faqat raqamlardan iborat, 1 dan 999 gacha
+function isValidNumber(text) {
+  if (!/^\d+$/.test(text.trim())) return false;
+  const num = parseInt(text.trim());
+  return num >= 1 && num <= 999;
+}
+
+// Yoshlar: faqat raqamlar, vergul, bo'shliqlar
 function isValidAges(text) {
-  // Faqat raqamlar, vergul, bo'shliqlar bo'lishi kerak
   if (!/^[\d,\s]+$/.test(text)) return false;
-  // Kamida 1 ta raqam bo'lsin
   if (!/\d/.test(text)) return false;
+  if (text.length > 50) return false;
   return true;
 }
 
@@ -88,7 +110,7 @@ async function promptState(ctx, state) {
   }
 }
 
-// ============ KOMANDALAR (scene ichida ishlashi uchun) ============
+// ============ KOMANDALAR ============
 survey.command('start', async (ctx) => {
   await ctx.scene.leave();
   return ctx.scene.enter(SURVEY_SCENE);
@@ -122,13 +144,13 @@ survey.command('chatid', async (ctx) => {
   await ctx.reply('Chat ID: `' + ctx.chat.id + '`', { parse_mode: 'Markdown' });
 });
 
-// ============ TIL TANLASH ============
+// ============ TIL ============
 survey.action(/^lang_(uz|ru)$/, async (ctx) => {
   const newLang = ctx.match[1];
   const wasFirstTime = ctx.session.state === S.PICK_LANG;
   ctx.session.lang = newLang;
   dbApi.setUserLanguage(ctx.from.id, newLang);
-  await ctx.answerCbQuery(newLang === 'uz' ? "✅ O'zbek tili tanlandi" : '✅ Выбран русский язык');
+  await ctx.answerCbQuery(newLang === 'uz' ? "✅ O'zbek tili" : '✅ Русский язык');
 
   try {
     await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
@@ -193,7 +215,6 @@ survey.on('text', async (ctx) => {
   const lang = ctx.session.lang || 'uz';
   const state = ctx.session.state;
 
-  // Barcha komandalarni e'tibordan o'tkazib yuborish (ular yuqorida ishlanadi)
   if (text.startsWith('/')) return;
 
   switch (state) {
@@ -203,7 +224,7 @@ survey.on('text', async (ctx) => {
 
     case S.ASK_NAME:
       if (!isValidName(text)) {
-        await ctx.reply(t(lang, 'invalidName'));
+        await ctx.reply(t(lang, 'invalidName'), { parse_mode: 'Markdown' });
         return;
       }
       ctx.session.surveyData.full_name = text;
@@ -211,8 +232,8 @@ survey.on('text', async (ctx) => {
       break;
 
     case S.ASK_DEST:
-      if (text.length < 2) {
-        await ctx.reply(t(lang, 'invalidName'));
+      if (!isValidDestination(text)) {
+        await ctx.reply(t(lang, 'invalidDestination'), { parse_mode: 'Markdown' });
         return;
       }
       ctx.session.surveyData.destination = text;
@@ -220,14 +241,17 @@ survey.on('text', async (ctx) => {
       break;
 
     case S.ASK_DATE:
-      // Sana — har qanday format
+      if (!isValidDate(text)) {
+        await ctx.reply(t(lang, 'invalidDate'), { parse_mode: 'Markdown' });
+        return;
+      }
       ctx.session.surveyData.travel_date = text;
       await promptState(ctx, S.ASK_PEOPLE);
       break;
 
     case S.ASK_PEOPLE:
       if (!isValidNumber(text)) {
-        await ctx.reply(t(lang, 'invalidNumber'));
+        await ctx.reply(t(lang, 'invalidPeople'), { parse_mode: 'Markdown' });
         return;
       }
       ctx.session.surveyData.people_count = text;
@@ -240,7 +264,7 @@ survey.on('text', async (ctx) => {
 
     case S.ASK_CHILDREN_COUNT:
       if (!isValidNumber(text)) {
-        await ctx.reply(t(lang, 'invalidNumber'));
+        await ctx.reply(t(lang, 'invalidChildrenCount'), { parse_mode: 'Markdown' });
         return;
       }
       ctx.session.surveyData.children_count = text;
@@ -262,8 +286,8 @@ survey.on('text', async (ctx) => {
 
     case S.ASK_PHONE: {
       const digits = text.replace(/\D/g, '');
-      if (digits.length < 7) {
-        await ctx.reply(t(lang, 'invalidPhone'));
+      if (digits.length < 7 || digits.length > 15) {
+        await ctx.reply(t(lang, 'invalidPhone'), { parse_mode: 'Markdown' });
         return;
       }
       ctx.session.surveyData.phone = text;
@@ -329,12 +353,10 @@ async function sendToGroup(ctx, data) {
       const altId = '-100' + String(groupId).replace(/^-/, '');
       try {
         await ctx.telegram.sendMessage(altId, message);
-        console.log('OK - Guruhga yuborildi (-100 prefix bilan): ' + altId);
         dbApi.setSetting('group_id', altId);
+        console.log('OK - Yangi ID bilan: ' + altId);
         return;
-      } catch (err2) {
-        console.error('XATO - ' + altId + ' ga ham yuborib bo\'lmadi: ' + err2.message);
-      }
+      } catch (err2) { /* ignore */ }
     }
 
     try {
@@ -342,9 +364,7 @@ async function sendToGroup(ctx, data) {
       if (superAdminId) {
         await ctx.telegram.sendMessage(
           superAdminId,
-          'Guruhga xabar yuborib bo\'lmadi!\n\n' +
-          'Guruh ID: ' + groupId + '\n' +
-          'Xato: ' + err.message
+          'Guruhga xabar yuborib bo\'lmadi!\nGuruh ID: ' + groupId + '\nXato: ' + err.message
         );
       }
     } catch (e) { /* ignore */ }
