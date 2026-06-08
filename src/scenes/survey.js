@@ -18,50 +18,89 @@ const S = {
   ASK_PHONE: 'ask_phone',
 };
 
-// ============ VALIDATSIYA ============
-// Ism: kamida 3 ta belgi, faqat harflar/bo'shliq/apostrof/tire
+// ============ AQLLI VALIDATSIYA ============
+
+// Unli harflar — haqiqiy so'zda bo'lishi shart
+const VOWELS = 'aeiouyAEIOUYаеёиоуыэюяАЕЁИОУЫЭЮЯ';
+
+function hasVowel(text) {
+  for (const ch of text) {
+    if (VOWELS.includes(ch)) return true;
+  }
+  return false;
+}
+
+// Ism: kamida 3 harf, unli bor, faqat harflar
 function isValidName(text) {
   if (text.length < 3 || text.length > 100) return false;
-  if (!/^[a-zA-ZА-Яа-яЁёўғҳқЎҒҲҚʻ'`\s\-]+$/.test(text)) return false;
-  // Kamida 2 ta harf bo'lishi kerak
+  // Faqat harflar, bo'shliq, apostrof, tire
+  if (!/^[a-zA-ZА-Яа-яЁёўғҳқЎҒҲҚʻ'`\s\-\.]+$/.test(text)) return false;
   const letters = text.match(/[a-zA-ZА-Яа-яЁёўғҳқЎҒҲҚ]/g);
-  return letters && letters.length >= 2;
+  if (!letters || letters.length < 3) return false;
+  // Haqiqiy so'zda unli bor
+  if (!hasVowel(text)) return false;
+  // 4 va undan ortiq bir xil harf ketma-ket bo'lmasin (masalan: "aaaa")
+  if (/(.)\1{3,}/.test(text)) return false;
+  return true;
 }
 
-// Yo'nalish: kamida 3 ta belgi, kamida 2 ta harf bo'lishi shart
+// Yo'nalish: kamida 3 harf, unli bor
 function isValidDestination(text) {
   if (text.length < 3 || text.length > 100) return false;
+  if (!/^[a-zA-ZА-Яа-яЁёўғҳқЎҒҲҚʻ'`\s\-,\.]+$/.test(text)) return false;
   const letters = text.match(/[a-zA-ZА-Яа-яЁёўғҳқЎҒҲҚ]/g);
-  if (!letters || letters.length < 2) return false;
-  // Faqat raqamlardan iborat bo'lmasligi kerak
-  if (/^[\d\s\W]+$/.test(text)) return false;
+  if (!letters || letters.length < 3) return false;
+  if (!hasVowel(text)) return false;
+  if (/(.)\1{3,}/.test(text)) return false;
   return true;
 }
 
-// Sana: kamida 1 ta raqam bo'lishi shart, 3-50 belgi
+// Sana: aniq formatlar
 function isValidDate(text) {
   if (text.length < 3 || text.length > 50) return false;
-  // Kamida 1 ta raqam bo'lsin
-  const digits = text.match(/\d/g);
-  if (!digits || digits.length < 1) return false;
-  // Faqat ruxsat etilgan belgilar: harflar, raqamlar, ., -, /, bo'shliq, vergul
-  if (!/^[a-zA-ZА-Яа-яЁёўғҳқЎҒҲҚ0-9\.\-\/\s,]+$/.test(text)) return false;
-  return true;
+  const cleaned = text.trim().toLowerCase();
+
+  // DD.MM.YYYY / DD-MM-YYYY / DD/MM/YYYY
+  if (/^\d{1,2}[\.\-\/]\d{1,2}[\.\-\/]\d{2,4}$/.test(cleaned)) return true;
+
+  // DD month_name (oy nomi bilan)
+  const monthsUz = 'yanvar|fevral|mart|aprel|may|iyun|iyul|avgust|sentyabr|oktyabr|noyabr|dekabr';
+  const monthsRu = 'январ|феврал|март|апрел|мая|май|июн|июл|август|сентябр|октябр|ноябр|декабр';
+  const monthRe = new RegExp(`^\\d{1,2}[\\s\\-]*(${monthsUz}|${monthsRu})`, 'i');
+  if (monthRe.test(cleaned)) return true;
+
+  // Month_name DD (masalan: "August 19" yoki "19 август")
+  const monthFirstRe = new RegExp(`^(${monthsUz}|${monthsRu})[\\s\\-]*\\d{1,2}`, 'i');
+  if (monthFirstRe.test(cleaned)) return true;
+
+  // DD-DD month (oraliq: 19-25 avgust)
+  const rangeRe = new RegExp(`^\\d{1,2}\\s*-\\s*\\d{1,2}[\\s\\-]*(${monthsUz}|${monthsRu})`, 'i');
+  if (rangeRe.test(cleaned)) return true;
+
+  return false;
 }
 
-// Son: faqat raqamlardan iborat, 1 dan 999 gacha
-function isValidNumber(text) {
+// Son tekshirish (min-max oralig'ida)
+function isValidNumber(text, min, max) {
   if (!/^\d+$/.test(text.trim())) return false;
   const num = parseInt(text.trim());
-  return num >= 1 && num <= 999;
+  return num >= (min || 1) && num <= (max || 999);
 }
 
-// Yoshlar: faqat raqamlar, vergul, bo'shliqlar
-function isValidAges(text) {
-  if (!/^[\d,\s]+$/.test(text)) return false;
-  if (!/\d/.test(text)) return false;
-  if (text.length > 50) return false;
-  return true;
+// Yoshlar: kerakli son va to'g'ri qiymatlar
+function parseAges(text) {
+  // Faqat raqamlar, vergul, bo'shliq, nuqta vergul
+  if (!/^[\d,;\s]+$/.test(text)) return null;
+  const parts = text.split(/[,;\s]+/).filter(x => x.length > 0);
+  const ages = [];
+  for (const p of parts) {
+    if (!/^\d+$/.test(p)) return null;
+    const n = parseInt(p);
+    if (isNaN(n) || n < 0 || n > 100) return null;
+    ages.push(n);
+  }
+  if (ages.length === 0) return null;
+  return ages;
 }
 
 const survey = new Scenes.BaseScene(SURVEY_SCENE);
@@ -81,7 +120,7 @@ async function promptState(ctx, state) {
       await ctx.reply(t('uz', 'chooseLanguage'), kb.languageInline());
       break;
     case S.ASK_NAME:
-      await ctx.reply(t(lang, 'askName'));
+      await ctx.reply(t(lang, 'askName'), { parse_mode: 'Markdown' });
       break;
     case S.ASK_DEST:
       await ctx.reply(t(lang, 'askDestination'), { parse_mode: 'Markdown' });
@@ -90,7 +129,7 @@ async function promptState(ctx, state) {
       await ctx.reply(t(lang, 'askDate'), { parse_mode: 'Markdown' });
       break;
     case S.ASK_PEOPLE:
-      await ctx.reply(t(lang, 'askPeople'));
+      await ctx.reply(t(lang, 'askPeople'), { parse_mode: 'Markdown' });
       break;
     case S.ASK_CHILDREN:
       await ctx.reply(t(lang, 'askChildren'), kb.yesNoInline(lang));
@@ -250,7 +289,7 @@ survey.on('text', async (ctx) => {
       break;
 
     case S.ASK_PEOPLE:
-      if (!isValidNumber(text)) {
+      if (!isValidNumber(text, 1, 50)) {
         await ctx.reply(t(lang, 'invalidPeople'), { parse_mode: 'Markdown' });
         return;
       }
@@ -262,23 +301,44 @@ survey.on('text', async (ctx) => {
       await ctx.reply(t(lang, 'askChildren'), kb.yesNoInline(lang));
       break;
 
-    case S.ASK_CHILDREN_COUNT:
-      if (!isValidNumber(text)) {
+    case S.ASK_CHILDREN_COUNT: {
+      if (!isValidNumber(text, 1, 50)) {
         await ctx.reply(t(lang, 'invalidChildrenCount'), { parse_mode: 'Markdown' });
+        return;
+      }
+      const childrenCount = parseInt(text);
+      const peopleCount = parseInt(ctx.session.surveyData.people_count) || 0;
+      // Bolalar soni umumiy odam sonidan kam bo'lishi kerak (kamida 1 ta katta odam kerak)
+      if (childrenCount >= peopleCount) {
+        const msg = t(lang, 'invalidChildrenMath')
+          .replace('{p}', peopleCount)
+          .replace('{c}', childrenCount);
+        await ctx.reply(msg);
         return;
       }
       ctx.session.surveyData.children_count = text;
       await promptState(ctx, S.ASK_CHILDREN_AGES);
       break;
+    }
 
-    case S.ASK_CHILDREN_AGES:
-      if (!isValidAges(text)) {
+    case S.ASK_CHILDREN_AGES: {
+      const ages = parseAges(text);
+      if (!ages) {
         await ctx.reply(t(lang, 'invalidAges'), { parse_mode: 'Markdown' });
         return;
       }
-      ctx.session.surveyData.children_ages = text;
+      const expectedCount = parseInt(ctx.session.surveyData.children_count) || 0;
+      if (ages.length !== expectedCount) {
+        const msg = t(lang, 'invalidAgesCount')
+          .replace('{n}', expectedCount)
+          .replace('{a}', ages.length);
+        await ctx.reply(msg, { parse_mode: 'Markdown' });
+        return;
+      }
+      ctx.session.surveyData.children_ages = ages.join(', ');
       await promptState(ctx, S.ASK_TIME);
       break;
+    }
 
     case S.ASK_TIME:
       await ctx.reply(t(lang, 'askContactTime'), kb.contactTimesInline(lang));
