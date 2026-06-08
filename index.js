@@ -1,5 +1,6 @@
 require('dotenv').config();
 const { Telegraf, Scenes, session } = require('telegraf');
+const express = require('express');
 const { dbApi, init } = require('./src/database');
 const { t } = require('./src/locales');
 const { survey, SURVEY_SCENE } = require('./src/scenes/survey');
@@ -167,6 +168,19 @@ async function setBotCommands() {
     console.error('setMyCommands xato:', e.message);
   }
 }
+
+// HTTP server — UptimeRobot uchun (botni uxlatmaslik)
+const app = express();
+const PORT = process.env.PORT || 3000;
+app.get('/', (req, res) => {
+  res.send('Bot is running! ✅ Riva Tour Bot — ' + new Date().toISOString());
+});
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', uptime: process.uptime() });
+});
+app.listen(PORT, () => {
+  console.log('HTTP server listening on port:', PORT);
+});
 
 bot.launch().then(async () => {
   await setBotCommands();

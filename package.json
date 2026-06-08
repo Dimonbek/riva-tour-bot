@@ -14,7 +14,8 @@
     "telegraf": "^4.16.3",
     "dotenv": "^16.4.5",
     "better-sqlite3": "^11.3.0",
-    "exceljs": "^4.4.0"
+    "exceljs": "^4.4.0",
+    "express": "^4.19.2"
   },
   "engines": {
     "node": ">=18.0.0"
