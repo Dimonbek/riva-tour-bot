@@ -27,7 +27,8 @@ const defaultLocales = {
     date3Months: "🌙 Uch oydan so'ng",
     dateCheap: "💰 Qaysi arzon bo'lsa",
     // People options
-    peopleAlone: "1 (Sherik topilar 😄)",
+    peopleAlone: "1 (yakka)",
+    peoplePartner: "😄 Sherik topilar",
     peopleMore: "👥 Boshqa son...",
     // Age options
     age0_2: "👶 0-2 yosh",
@@ -80,7 +81,8 @@ const defaultLocales = {
     dateNextMonth: "📅 Следующий месяц",
     date3Months: "🌙 Через три месяца",
     dateCheap: "💰 Когда дешевле",
-    peopleAlone: "1 (Найдём попутчика 😄)",
+    peopleAlone: "1 (один)",
+    peoplePartner: "😄 Найдём попутчика",
     peopleMore: "👥 Другое число...",
     age0_2: "👶 0-2 года",
     age3_6: "🧒 3-6 лет",

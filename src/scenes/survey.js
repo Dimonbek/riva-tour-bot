@@ -37,7 +37,6 @@ function previousState(state, hasChildren) {
   }
 }
 
-// ============ VALIDATSIYA ============
 const VOWELS = 'aeiouyAEIOUYаеёиоуыэюяАЕЁИОУЫЭЮЯ';
 function hasVowel(text) {
   for (const ch of text) if (VOWELS.includes(ch)) return true;
@@ -82,7 +81,6 @@ async function promptState(ctx, state) {
   const lang = ctx.session.lang || 'uz';
   ctx.session.state = state;
   const opts = { parse_mode: 'Markdown' };
-
   switch (state) {
     case S.PICK_LANG:
       await ctx.reply(t('uz', 'chooseLanguage'), kb.languageInline());
@@ -128,7 +126,6 @@ async function promptState(ctx, state) {
   }
 }
 
-// ============ KOMANDALAR ============
 survey.command('start', async (ctx) => {
   await ctx.scene.leave();
   return ctx.scene.enter(SURVEY_SCENE);
@@ -158,7 +155,6 @@ survey.command('help', async (ctx) => {
   await ctx.reply(msg);
 });
 
-// ============ TIL TANLASH ============
 survey.action(/^lang_(uz|ru)$/, async (ctx) => {
   const newLang = ctx.match[1];
   const wasFirstTime = ctx.session.state === S.PICK_LANG;
@@ -174,7 +170,6 @@ survey.action(/^lang_(uz|ru)$/, async (ctx) => {
   }
 });
 
-// ============ ORTGA ============
 survey.action('back', async (ctx) => {
   await ctx.answerCbQuery();
   try { await ctx.deleteMessage(); } catch (e) {}
@@ -182,14 +177,11 @@ survey.action('back', async (ctx) => {
   const currentState = ctx.session.state;
   const prev = previousState(currentState, hasChildren);
   if (!prev) return;
-
-  // Joriy qadam ma'lumotini tozalash
   const data = ctx.session.surveyData || {};
   if (currentState === S.ASK_DEST || currentState === S.ASK_CUSTOM_DEST) {
     delete data.destination;
   } else if (currentState === S.ASK_DATE) {
     delete data.travel_date;
-    delete data.travel_date_key;
   } else if (currentState === S.ASK_PEOPLE || currentState === S.ASK_PEOPLE_CUSTOM) {
     delete data.people_count;
   } else if (currentState === S.ASK_CHILDREN) {
@@ -197,14 +189,12 @@ survey.action('back', async (ctx) => {
   } else if (currentState === S.ASK_CHILDREN_COUNT) {
     delete data.children_count;
   } else if (currentState === S.ASK_CHILD_AGE) {
-    // Bola yoshi tanlash o'rtasida: bitta orqaga
     if (ctx.session.currentChild && ctx.session.currentChild > 1) {
       ctx.session.currentChild--;
       if (ctx.session.childAges) ctx.session.childAges.pop();
       await promptState(ctx, S.ASK_CHILD_AGE);
       return;
     } else {
-      // 1-bola, bolalar soniga qaytish
       delete data.children_count;
       ctx.session.currentChild = 0;
       ctx.session.childAges = [];
@@ -215,7 +205,6 @@ survey.action('back', async (ctx) => {
   await promptState(ctx, prev);
 });
 
-// ============ YO'NALISH ============
 survey.action(/^dest:(.+)$/, async (ctx) => {
   if (ctx.session.state !== S.ASK_DEST) return ctx.answerCbQuery();
   const val = ctx.match[1];
@@ -232,7 +221,6 @@ survey.action(/^dest:(.+)$/, async (ctx) => {
   await promptState(ctx, S.ASK_DATE);
 });
 
-// ============ SANA ============
 survey.action(/^date:(.+)$/, async (ctx) => {
   if (ctx.session.state !== S.ASK_DATE) return ctx.answerCbQuery();
   const key = ctx.match[1];
@@ -245,28 +233,29 @@ survey.action(/^date:(.+)$/, async (ctx) => {
   await promptState(ctx, S.ASK_PEOPLE);
 });
 
-// ============ ODAM SONI ============
 survey.action(/^people:(.+)$/, async (ctx) => {
   if (ctx.session.state !== S.ASK_PEOPLE) return ctx.answerCbQuery();
   const val = ctx.match[1];
+  const lang = ctx.session.lang || 'uz';
   await ctx.answerCbQuery();
   try { await ctx.editMessageReplyMarkup({ inline_keyboard: [] }); } catch (e) {}
   if (val === 'more') {
     await promptState(ctx, S.ASK_PEOPLE_CUSTOM);
     return;
   }
-  ctx.session.surveyData.people_count = val;
+  if (val === 'partner') {
+    ctx.session.surveyData.people_count = '1 (' + t(lang, 'peoplePartner') + ')';
+  } else {
+    ctx.session.surveyData.people_count = val;
+  }
   await promptState(ctx, S.ASK_CHILDREN);
 });
 
-// ============ BOLALAR HA/YO'Q ============
 survey.action(/^children_(yes|no)$/, async (ctx) => {
   if (ctx.session.state !== S.ASK_CHILDREN) return ctx.answerCbQuery();
   const hasChildren = ctx.match[1] === 'yes';
   await ctx.answerCbQuery();
   try { await ctx.editMessageReplyMarkup({ inline_keyboard: [] }); } catch (e) {}
-
-  // Agar 1 kishi bo'lsa va bolalar bor desa — math xato bo'lib qoladi
   const peopleCount = parseInt(ctx.session.surveyData.people_count) || 0;
   if (hasChildren && peopleCount <= 1) {
     const lang = ctx.session.lang || 'uz';
@@ -278,7 +267,6 @@ survey.action(/^children_(yes|no)$/, async (ctx) => {
     await promptState(ctx, S.ASK_CHILDREN);
     return;
   }
-
   ctx.session.surveyData.has_children = hasChildren;
   if (hasChildren) {
     await promptState(ctx, S.ASK_CHILDREN_COUNT);
@@ -287,7 +275,6 @@ survey.action(/^children_(yes|no)$/, async (ctx) => {
   }
 });
 
-// ============ BOLALAR SONI ============
 survey.action(/^cc:(\d+)$/, async (ctx) => {
   if (ctx.session.state !== S.ASK_CHILDREN_COUNT) return ctx.answerCbQuery();
   const cnt = parseInt(ctx.match[1]);
@@ -307,7 +294,6 @@ survey.action(/^cc:(\d+)$/, async (ctx) => {
   await promptState(ctx, S.ASK_CHILD_AGE);
 });
 
-// ============ BOLA YOSHI ============
 survey.action(/^age:(.+)$/, async (ctx) => {
   if (ctx.session.state !== S.ASK_CHILD_AGE) return ctx.answerCbQuery();
   const key = ctx.match[1];
@@ -316,13 +302,10 @@ survey.action(/^age:(.+)$/, async (ctx) => {
   if (!option) return ctx.answerCbQuery();
   await ctx.answerCbQuery();
   try { await ctx.editMessageReplyMarkup({ inline_keyboard: [] }); } catch (e) {}
-
   if (!ctx.session.childAges) ctx.session.childAges = [];
   ctx.session.childAges.push(t(lang, option.tKey));
-
   const total = parseInt(ctx.session.surveyData.children_count) || 0;
   if (ctx.session.currentChild >= total) {
-    // Hammasi tanlandi
     ctx.session.surveyData.children_ages = ctx.session.childAges.join(', ');
     await promptState(ctx, S.ASK_TIME);
   } else {
@@ -331,7 +314,6 @@ survey.action(/^age:(.+)$/, async (ctx) => {
   }
 });
 
-// ============ BOG'LANISH VAQTI ============
 survey.action(/^time_(\d+)$/, async (ctx) => {
   if (ctx.session.state !== S.ASK_TIME) return ctx.answerCbQuery();
   const id = parseInt(ctx.match[1]);
@@ -344,25 +326,21 @@ survey.action(/^time_(\d+)$/, async (ctx) => {
   await promptState(ctx, S.ASK_PHONE);
 });
 
-// ============ KONTAKT ============
 survey.on('contact', async (ctx) => {
   if (ctx.session.state !== S.ASK_PHONE) return;
   ctx.session.surveyData.phone = ctx.message.contact.phone_number;
   await finishSurvey(ctx);
 });
 
-// ============ MATN ============
 survey.on('text', async (ctx) => {
   const text = ctx.message.text.trim();
   const lang = ctx.session.lang || 'uz';
   const state = ctx.session.state;
   if (text.startsWith('/')) return;
-
   switch (state) {
     case S.PICK_LANG:
       await ctx.reply(t('uz', 'chooseLanguage'), kb.languageInline());
       break;
-
     case S.ASK_NAME:
       if (!isValidName(text)) {
         await ctx.reply(t(lang, 'invalidName'), { parse_mode: 'Markdown' });
@@ -371,11 +349,9 @@ survey.on('text', async (ctx) => {
       ctx.session.surveyData.full_name = text;
       await promptState(ctx, S.ASK_DEST);
       break;
-
     case S.ASK_DEST:
       await ctx.reply(t(lang, 'askDestination'), { parse_mode: 'Markdown', ...kb.destinationsInline(lang) });
       break;
-
     case S.ASK_CUSTOM_DEST:
       if (!isValidDestination(text)) {
         await ctx.reply(t(lang, 'invalidDestination'), { parse_mode: 'Markdown' });
@@ -384,16 +360,12 @@ survey.on('text', async (ctx) => {
       ctx.session.surveyData.destination = text;
       await promptState(ctx, S.ASK_DATE);
       break;
-
     case S.ASK_DATE:
-      // Tugma tanlash kerak
       await ctx.reply(t(lang, 'askDate'), kb.datesInline(lang));
       break;
-
     case S.ASK_PEOPLE:
       await ctx.reply(t(lang, 'askPeople'), kb.peopleInline(lang));
       break;
-
     case S.ASK_PEOPLE_CUSTOM:
       if (!isValidNumber(text, 1, 50)) {
         await ctx.reply(t(lang, 'invalidPeople'), { parse_mode: 'Markdown' });
@@ -402,15 +374,12 @@ survey.on('text', async (ctx) => {
       ctx.session.surveyData.people_count = text;
       await promptState(ctx, S.ASK_CHILDREN);
       break;
-
     case S.ASK_CHILDREN:
       await ctx.reply(t(lang, 'askChildren'), kb.yesNoInline(lang));
       break;
-
     case S.ASK_CHILDREN_COUNT:
       await ctx.reply(t(lang, 'askChildrenCount'), kb.childrenCountInline(lang));
       break;
-
     case S.ASK_CHILD_AGE: {
       const idx = ctx.session.currentChild || 1;
       const total = parseInt(ctx.session.surveyData.children_count) || 0;
@@ -418,11 +387,9 @@ survey.on('text', async (ctx) => {
       await ctx.reply(msg, kb.childAgeInline(lang));
       break;
     }
-
     case S.ASK_TIME:
       await ctx.reply(t(lang, 'askContactTime'), kb.contactTimesInline(lang));
       break;
-
     case S.ASK_PHONE: {
       const digits = text.replace(/\D/g, '');
       if (digits.length < 7 || digits.length > 15) {
@@ -433,7 +400,6 @@ survey.on('text', async (ctx) => {
       await finishSurvey(ctx);
       break;
     }
-
     default:
       await ctx.scene.leave();
       await ctx.scene.enter(SURVEY_SCENE);

@@ -16,7 +16,6 @@ const TOURS = [
   'Dubay',
 ];
 
-// Sana variantlari (callback => label key)
 const DATE_OPTIONS = [
   { key: 'soon', tKey: 'dateSoon' },
   { key: 'next_month', tKey: 'dateNextMonth' },
@@ -24,7 +23,6 @@ const DATE_OPTIONS = [
   { key: 'cheap', tKey: 'dateCheap' },
 ];
 
-// Yosh kategoriyalari (callback => label key)
 const AGE_OPTIONS = [
   { key: '0_2', tKey: 'age0_2' },
   { key: '3_6', tKey: 'age3_6' },
@@ -63,7 +61,10 @@ function datesInline(lang) {
 
 function peopleInline(lang) {
   const rows = [
-    [Markup.button.callback(t(lang, 'peopleAlone'), 'people:1')],
+    [
+      Markup.button.callback(t(lang, 'peopleAlone'), 'people:1'),
+      Markup.button.callback(t(lang, 'peoplePartner'), 'people:partner'),
+    ],
     [
       Markup.button.callback('2', 'people:2'),
       Markup.button.callback('3', 'people:3'),
