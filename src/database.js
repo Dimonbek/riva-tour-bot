@@ -32,6 +32,7 @@ db.exec(`
     children_ages TEXT,
     contact_time TEXT,
     phone TEXT,
+    manager TEXT,
     language TEXT,
     created_at TEXT DEFAULT (datetime('now'))
   );
@@ -59,16 +60,23 @@ db.exec(`
     label TEXT,
     sort_order INTEGER DEFAULT 0
   );
+
+  CREATE TABLE IF NOT EXISTS managers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT,
+    sort_order INTEGER DEFAULT 0
+  );
 `);
+
+// Manager ustunini eski jadvalga qo'shish (agar bo'lmasa)
+try { db.exec('ALTER TABLE surveys ADD COLUMN manager TEXT'); } catch (e) {}
 
 function seedAdmins() {
   const superAdmin = parseInt(process.env.SUPER_ADMIN_ID);
   const adminIds = (process.env.ADMIN_IDS || '').split(',').map(s => parseInt(s.trim())).filter(Boolean);
   const insert = db.prepare('INSERT OR IGNORE INTO admins (telegram_id, is_super) VALUES (?, ?)');
   if (superAdmin) insert.run(superAdmin, 1);
-  for (const id of adminIds) {
-    insert.run(id, id === superAdmin ? 1 : 0);
-  }
+  for (const id of adminIds) insert.run(id, id === superAdmin ? 1 : 0);
 }
 
 function seedContactTimes() {
@@ -82,10 +90,20 @@ function seedContactTimes() {
   }
 }
 
+function seedManagers() {
+  const count = db.prepare('SELECT COUNT(*) as c FROM managers').get().c;
+  if (count === 0) {
+    const insert = db.prepare('INSERT INTO managers (name, sort_order) VALUES (?, ?)');
+    const list = ['Jaloliddin', 'Sitora', 'Shohjahon', 'Sardor', 'Temur', 'Muslima'];
+    list.forEach((name, i) => insert.run(name, i + 1));
+  }
+}
+
 function seedSettings() {
   const insert = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
   insert.run('group_id', process.env.GROUP_ID || '');
   insert.run('bot_active', '1');
+  insert.run('manager_counter', '0');
 }
 
 const dbApi = {
@@ -127,12 +145,12 @@ const dbApi = {
 
   saveSurvey(data) {
     return db.prepare(`
-      INSERT INTO surveys (telegram_id, full_name, destination, travel_date, people_count, has_children, children_count, children_ages, contact_time, phone, language)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO surveys (telegram_id, full_name, destination, travel_date, people_count, has_children, children_count, children_ages, contact_time, phone, manager, language)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
-      data.telegram_id, data.full_name, data.destination, data.travel_date,
+      data.telegram_id, data.full_name || null, data.destination, data.travel_date,
       data.people_count, data.has_children ? 1 : 0, data.children_count || null,
-      data.children_ages || null, data.contact_time, data.phone, data.language
+      data.children_ages || null, data.contact_time, data.phone, data.manager || null, data.language
     );
   },
   getAllSurveys() {
@@ -143,7 +161,6 @@ const dbApi = {
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
     const weekStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-
     return {
       total: db.prepare('SELECT COUNT(*) as c FROM surveys').get().c,
       today: db.prepare("SELECT COUNT(*) as c FROM surveys WHERE created_at >= ?").get(todayStart).c,
@@ -152,6 +169,7 @@ const dbApi = {
       destinations: db.prepare('SELECT destination, COUNT(*) as c FROM surveys GROUP BY destination ORDER BY c DESC LIMIT 5').all(),
       times: db.prepare('SELECT contact_time, COUNT(*) as c FROM surveys GROUP BY contact_time ORDER BY c DESC').all(),
       languages: db.prepare('SELECT language, COUNT(*) as c FROM surveys GROUP BY language').all(),
+      managers: db.prepare('SELECT manager, COUNT(*) as c FROM surveys WHERE manager IS NOT NULL GROUP BY manager ORDER BY c DESC').all(),
       totalUsers: db.prepare('SELECT COUNT(*) as c FROM users').get().c,
       blockedUsers: db.prepare('SELECT COUNT(*) as c FROM users WHERE is_blocked = 1').get().c,
     };
@@ -161,8 +179,7 @@ const dbApi = {
     return db.prepare('SELECT telegram_id, is_super, added_at FROM admins ORDER BY is_super DESC, added_at ASC').all();
   },
   isAdmin(telegramId) {
-    const row = db.prepare('SELECT telegram_id FROM admins WHERE telegram_id = ?').get(telegramId);
-    return !!row;
+    return !!db.prepare('SELECT telegram_id FROM admins WHERE telegram_id = ?').get(telegramId);
   },
   isSuperAdmin(telegramId) {
     const row = db.prepare('SELECT is_super FROM admins WHERE telegram_id = ?').get(telegramId);
@@ -207,11 +224,33 @@ const dbApi = {
   removeContactTime(id) {
     db.prepare('DELETE FROM contact_times WHERE id = ?').run(id);
   },
+
+  // ============ MANAGERS ============
+  getManagers() {
+    return db.prepare('SELECT id, name, sort_order FROM managers ORDER BY sort_order ASC, id ASC').all();
+  },
+  addManager(name) {
+    const max = db.prepare('SELECT COALESCE(MAX(sort_order), 0) as m FROM managers').get().m;
+    db.prepare('INSERT INTO managers (name, sort_order) VALUES (?, ?)').run(name, max + 1);
+  },
+  removeManager(id) {
+    db.prepare('DELETE FROM managers WHERE id = ?').run(id);
+  },
+  // Navbatdagi menejerni olish va counter'ni oshirish
+  getNextManager() {
+    const managers = this.getManagers();
+    if (managers.length === 0) return null;
+    const counter = parseInt(this.getSetting('manager_counter') || '0');
+    const manager = managers[counter % managers.length];
+    this.setSetting('manager_counter', String((counter + 1) % managers.length));
+    return manager.name;
+  },
 };
 
 function init() {
   seedAdmins();
   seedContactTimes();
+  seedManagers();
   seedSettings();
 }
 

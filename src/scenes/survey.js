@@ -5,9 +5,10 @@ const kb = require('../keyboards');
 
 const SURVEY_SCENE = 'survey';
 
+// Yangi tartib: PHONE birinchi, NAME yo'q
 const S = {
   PICK_LANG: 'pick_lang',
-  ASK_NAME: 'ask_name',
+  ASK_PHONE: 'ask_phone',
   ASK_DEST: 'ask_dest',
   ASK_CUSTOM_DEST: 'ask_custom_dest',
   ASK_DATE: 'ask_date',
@@ -17,13 +18,12 @@ const S = {
   ASK_CHILDREN_COUNT: 'ask_children_count',
   ASK_CHILD_AGE: 'ask_child_age',
   ASK_TIME: 'ask_time',
-  ASK_PHONE: 'ask_phone',
 };
 
 function previousState(state, hasChildren) {
   switch (state) {
-    case S.ASK_NAME: return null;
-    case S.ASK_DEST: return S.ASK_NAME;
+    case S.ASK_PHONE: return null; // birinchi qadam
+    case S.ASK_DEST: return S.ASK_PHONE;
     case S.ASK_CUSTOM_DEST: return S.ASK_DEST;
     case S.ASK_DATE: return S.ASK_DEST;
     case S.ASK_PEOPLE: return S.ASK_DATE;
@@ -32,25 +32,8 @@ function previousState(state, hasChildren) {
     case S.ASK_CHILDREN_COUNT: return S.ASK_CHILDREN;
     case S.ASK_CHILD_AGE: return S.ASK_CHILDREN_COUNT;
     case S.ASK_TIME: return hasChildren ? S.ASK_CHILD_AGE : S.ASK_CHILDREN;
-    case S.ASK_PHONE: return S.ASK_TIME;
     default: return null;
   }
-}
-
-const VOWELS = 'aeiouyAEIOUYаеёиоуыэюяАЕЁИОУЫЭЮЯ';
-function hasVowel(text) {
-  for (const ch of text) if (VOWELS.includes(ch)) return true;
-  return false;
-}
-
-function isValidName(text) {
-  if (text.length < 3 || text.length > 100) return false;
-  if (!/^[a-zA-ZА-Яа-яЁёўғҳқЎҒҲҚʻ'`\s\-\.]+$/.test(text)) return false;
-  const letters = text.match(/[a-zA-ZА-Яа-яЁёўғҳқЎҒҲҚ]/g);
-  if (!letters || letters.length < 3) return false;
-  if (!hasVowel(text)) return false;
-  if (/(.)\1{3,}/.test(text)) return false;
-  return true;
 }
 
 function isValidDestination(text) {
@@ -58,7 +41,10 @@ function isValidDestination(text) {
   if (!/^[a-zA-ZА-Яа-яЁёўғҳқЎҒҲҚʻ'`\s\-,\.]+$/.test(text)) return false;
   const letters = text.match(/[a-zA-ZА-Яа-яЁёўғҳқЎҒҲҚ]/g);
   if (!letters || letters.length < 3) return false;
-  if (!hasVowel(text)) return false;
+  const VOWELS = 'aeiouyAEIOUYаеёиоуыэюяАЕЁИОУЫЭЮЯ';
+  let has = false;
+  for (const ch of text) if (VOWELS.includes(ch)) { has = true; break; }
+  if (!has) return false;
   if (/(.)\1{3,}/.test(text)) return false;
   return true;
 }
@@ -85,8 +71,8 @@ async function promptState(ctx, state) {
     case S.PICK_LANG:
       await ctx.reply(t('uz', 'chooseLanguage'), kb.languageInline());
       break;
-    case S.ASK_NAME:
-      await ctx.reply(t(lang, 'askName'), opts);
+    case S.ASK_PHONE:
+      await ctx.reply(t(lang, 'askPhone'), kb.phoneReply(lang));
       break;
     case S.ASK_DEST:
       await ctx.reply(t(lang, 'askDestination'), { ...opts, ...kb.destinationsInline(lang) });
@@ -119,10 +105,6 @@ async function promptState(ctx, state) {
     case S.ASK_TIME:
       await ctx.reply(t(lang, 'askContactTime'), kb.contactTimesInline(lang));
       break;
-    case S.ASK_PHONE:
-      await ctx.reply(t(lang, 'askPhone'), kb.phoneReply(lang));
-      await ctx.reply('👇', kb.backInline(lang));
-      break;
   }
 }
 
@@ -137,9 +119,7 @@ survey.command(['til', 'language'], async (ctx) => {
 });
 
 survey.command('admin', async (ctx) => {
-  if (!dbApi.isAdmin(ctx.from.id)) {
-    return ctx.reply("Sizda admin huquqlari yo'q.");
-  }
+  if (!dbApi.isAdmin(ctx.from.id)) return ctx.reply("Sizda admin huquqlari yo'q.");
   await ctx.scene.leave();
   return ctx.scene.enter('admin');
 });
@@ -164,7 +144,7 @@ survey.action(/^lang_(uz|ru)$/, async (ctx) => {
   try { await ctx.editMessageReplyMarkup({ inline_keyboard: [] }); } catch (e) {}
   if (wasFirstTime) {
     await ctx.reply(t(newLang, 'welcome'));
-    await promptState(ctx, S.ASK_NAME);
+    await promptState(ctx, S.ASK_PHONE);
   } else {
     await promptState(ctx, ctx.session.state);
   }
@@ -210,12 +190,8 @@ survey.action(/^dest:(.+)$/, async (ctx) => {
   const val = ctx.match[1];
   await ctx.answerCbQuery();
   try { await ctx.editMessageReplyMarkup({ inline_keyboard: [] }); } catch (e) {}
-  if (val === 'other') {
-    await promptState(ctx, S.ASK_CUSTOM_DEST);
-    return;
-  }
-  const idx = parseInt(val);
-  const tour = kb.TOURS[idx];
+  if (val === 'other') return promptState(ctx, S.ASK_CUSTOM_DEST);
+  const tour = kb.TOURS[parseInt(val)];
   if (!tour) return;
   ctx.session.surveyData.destination = tour;
   await promptState(ctx, S.ASK_DATE);
@@ -223,9 +199,8 @@ survey.action(/^dest:(.+)$/, async (ctx) => {
 
 survey.action(/^date:(.+)$/, async (ctx) => {
   if (ctx.session.state !== S.ASK_DATE) return ctx.answerCbQuery();
-  const key = ctx.match[1];
   const lang = ctx.session.lang || 'uz';
-  const option = kb.DATE_OPTIONS.find(o => o.key === key);
+  const option = kb.DATE_OPTIONS.find(o => o.key === ctx.match[1]);
   if (!option) return ctx.answerCbQuery();
   await ctx.answerCbQuery();
   try { await ctx.editMessageReplyMarkup({ inline_keyboard: [] }); } catch (e) {}
@@ -239,10 +214,7 @@ survey.action(/^people:(.+)$/, async (ctx) => {
   const lang = ctx.session.lang || 'uz';
   await ctx.answerCbQuery();
   try { await ctx.editMessageReplyMarkup({ inline_keyboard: [] }); } catch (e) {}
-  if (val === 'more') {
-    await promptState(ctx, S.ASK_PEOPLE_CUSTOM);
-    return;
-  }
+  if (val === 'more') return promptState(ctx, S.ASK_PEOPLE_CUSTOM);
   if (val === 'partner') {
     ctx.session.surveyData.people_count = '1 (' + t(lang, 'peoplePartner') + ')';
   } else {
@@ -261,18 +233,15 @@ survey.action(/^children_(yes|no)$/, async (ctx) => {
     const lang = ctx.session.lang || 'uz';
     await ctx.reply(
       lang === 'uz'
-        ? "❌ Bolalar bo'lsa, kamida 2 kishi bo'lishi kerak (1 katta + bolalar)."
-        : '❌ Если есть дети, нужно минимум 2 человека (1 взрослый + дети).'
+        ? "❌ Bolalar bo'lsa, kamida 2 kishi bo'lishi kerak."
+        : '❌ Если есть дети, нужно минимум 2 человека.'
     );
     await promptState(ctx, S.ASK_CHILDREN);
     return;
   }
   ctx.session.surveyData.has_children = hasChildren;
-  if (hasChildren) {
-    await promptState(ctx, S.ASK_CHILDREN_COUNT);
-  } else {
-    await promptState(ctx, S.ASK_TIME);
-  }
+  if (hasChildren) await promptState(ctx, S.ASK_CHILDREN_COUNT);
+  else await promptState(ctx, S.ASK_TIME);
 });
 
 survey.action(/^cc:(\d+)$/, async (ctx) => {
@@ -296,9 +265,8 @@ survey.action(/^cc:(\d+)$/, async (ctx) => {
 
 survey.action(/^age:(.+)$/, async (ctx) => {
   if (ctx.session.state !== S.ASK_CHILD_AGE) return ctx.answerCbQuery();
-  const key = ctx.match[1];
   const lang = ctx.session.lang || 'uz';
-  const option = kb.AGE_OPTIONS.find(o => o.key === key);
+  const option = kb.AGE_OPTIONS.find(o => o.key === ctx.match[1]);
   if (!option) return ctx.answerCbQuery();
   await ctx.answerCbQuery();
   try { await ctx.editMessageReplyMarkup({ inline_keyboard: [] }); } catch (e) {}
@@ -323,13 +291,15 @@ survey.action(/^time_(\d+)$/, async (ctx) => {
   ctx.session.surveyData.contact_time = time.label;
   await ctx.answerCbQuery('✅ ' + time.label);
   try { await ctx.editMessageReplyMarkup({ inline_keyboard: [] }); } catch (e) {}
-  await promptState(ctx, S.ASK_PHONE);
+  await finishSurvey(ctx);
 });
 
 survey.on('contact', async (ctx) => {
   if (ctx.session.state !== S.ASK_PHONE) return;
   ctx.session.surveyData.phone = ctx.message.contact.phone_number;
-  await finishSurvey(ctx);
+  // Phone reply klaviaturani olib tashlash
+  await ctx.reply('✅', kb.removeReply());
+  await promptState(ctx, S.ASK_DEST);
 });
 
 survey.on('text', async (ctx) => {
@@ -341,14 +311,17 @@ survey.on('text', async (ctx) => {
     case S.PICK_LANG:
       await ctx.reply(t('uz', 'chooseLanguage'), kb.languageInline());
       break;
-    case S.ASK_NAME:
-      if (!isValidName(text)) {
-        await ctx.reply(t(lang, 'invalidName'), { parse_mode: 'Markdown' });
+    case S.ASK_PHONE: {
+      const digits = text.replace(/\D/g, '');
+      if (digits.length < 7 || digits.length > 15) {
+        await ctx.reply(t(lang, 'invalidPhone'), { parse_mode: 'Markdown' });
         return;
       }
-      ctx.session.surveyData.full_name = text;
+      ctx.session.surveyData.phone = text;
+      await ctx.reply('✅', kb.removeReply());
       await promptState(ctx, S.ASK_DEST);
       break;
+    }
     case S.ASK_DEST:
       await ctx.reply(t(lang, 'askDestination'), { parse_mode: 'Markdown', ...kb.destinationsInline(lang) });
       break;
@@ -390,16 +363,6 @@ survey.on('text', async (ctx) => {
     case S.ASK_TIME:
       await ctx.reply(t(lang, 'askContactTime'), kb.contactTimesInline(lang));
       break;
-    case S.ASK_PHONE: {
-      const digits = text.replace(/\D/g, '');
-      if (digits.length < 7 || digits.length > 15) {
-        await ctx.reply(t(lang, 'invalidPhone'), { parse_mode: 'Markdown' });
-        return;
-      }
-      ctx.session.surveyData.phone = text;
-      await finishSurvey(ctx);
-      break;
-    }
     default:
       await ctx.scene.leave();
       await ctx.scene.enter(SURVEY_SCENE);
@@ -410,6 +373,9 @@ async function finishSurvey(ctx) {
   const lang = ctx.session.lang || 'uz';
   ctx.session.surveyData.telegram_id = ctx.from.id;
   ctx.session.surveyData.language = lang;
+  // Navbatdagi menejerni olish
+  const manager = dbApi.getNextManager();
+  ctx.session.surveyData.manager = manager;
   try { dbApi.saveSurvey(ctx.session.surveyData); } catch (e) { console.error('DB:', e); }
   await sendToGroup(ctx, ctx.session.surveyData);
   await ctx.reply(t(lang, 'finish'), kb.removeReply());
@@ -424,25 +390,29 @@ async function sendToGroup(ctx, data) {
     ? `${t(lang, 'g_childrenYes')} (${data.children_count}, ${t(lang, 'g_childrenAges')}: ${data.children_ages})`
     : t(lang, 'g_childrenNo');
   const username = ctx.from.username ? '@' + ctx.from.username : '—';
-  const message =
+  const userInfo = ctx.from.first_name || username;
+  let message =
     t(lang, 'g_newRequest') + '\n\n' +
-    t(lang, 'g_name') + ': ' + data.full_name + '\n' +
     t(lang, 'g_destination') + ': ' + data.destination + '\n' +
     t(lang, 'g_date') + ': ' + data.travel_date + '\n' +
     t(lang, 'g_people') + ': ' + data.people_count + '\n' +
     t(lang, 'g_children') + ': ' + childrenText + '\n' +
     t(lang, 'g_contactTime') + ': ' + data.contact_time + '\n' +
     t(lang, 'g_phone') + ': ' + data.phone + '\n' +
-    t(lang, 'g_username') + ': ' + username;
+    t(lang, 'g_username') + ': ' + username + '\n' +
+    '👤 ' + (lang === 'uz' ? 'Foydalanuvchi' : 'Пользователь') + ': ' + userInfo;
+  if (data.manager) {
+    message += '\n\n👨‍💼 ' + (lang === 'uz' ? 'Menejer' : 'Менеджер') + ': *' + data.manager + '*';
+  }
   try {
-    await ctx.telegram.sendMessage(groupId, message);
+    await ctx.telegram.sendMessage(groupId, message, { parse_mode: 'Markdown' });
     console.log('OK guruhga:', groupId);
   } catch (err) {
     console.error('Guruh xato:', err.message);
     if (!String(groupId).startsWith('-100')) {
       const altId = '-100' + String(groupId).replace(/^-/, '');
       try {
-        await ctx.telegram.sendMessage(altId, message);
+        await ctx.telegram.sendMessage(altId, message, { parse_mode: 'Markdown' });
         dbApi.setSetting('group_id', altId);
       } catch (e2) {}
     }
