@@ -9,42 +9,51 @@ const S = {
   PICK_LANG: 'pick_lang',
   ASK_NAME: 'ask_name',
   ASK_DEST: 'ask_dest',
+  ASK_CUSTOM_DEST: 'ask_custom_dest',
   ASK_DATE: 'ask_date',
   ASK_PEOPLE: 'ask_people',
+  ASK_PEOPLE_CUSTOM: 'ask_people_custom',
   ASK_CHILDREN: 'ask_children',
   ASK_CHILDREN_COUNT: 'ask_children_count',
-  ASK_CHILDREN_AGES: 'ask_children_ages',
+  ASK_CHILD_AGE: 'ask_child_age',
   ASK_TIME: 'ask_time',
   ASK_PHONE: 'ask_phone',
 };
 
-// ============ AQLLI VALIDATSIYA ============
-
-// Unli harflar — haqiqiy so'zda bo'lishi shart
-const VOWELS = 'aeiouyAEIOUYаеёиоуыэюяАЕЁИОУЫЭЮЯ';
-
-function hasVowel(text) {
-  for (const ch of text) {
-    if (VOWELS.includes(ch)) return true;
+function previousState(state, hasChildren) {
+  switch (state) {
+    case S.ASK_NAME: return null;
+    case S.ASK_DEST: return S.ASK_NAME;
+    case S.ASK_CUSTOM_DEST: return S.ASK_DEST;
+    case S.ASK_DATE: return S.ASK_DEST;
+    case S.ASK_PEOPLE: return S.ASK_DATE;
+    case S.ASK_PEOPLE_CUSTOM: return S.ASK_PEOPLE;
+    case S.ASK_CHILDREN: return S.ASK_PEOPLE;
+    case S.ASK_CHILDREN_COUNT: return S.ASK_CHILDREN;
+    case S.ASK_CHILD_AGE: return S.ASK_CHILDREN_COUNT;
+    case S.ASK_TIME: return hasChildren ? S.ASK_CHILD_AGE : S.ASK_CHILDREN;
+    case S.ASK_PHONE: return S.ASK_TIME;
+    default: return null;
   }
+}
+
+// ============ VALIDATSIYA ============
+const VOWELS = 'aeiouyAEIOUYаеёиоуыэюяАЕЁИОУЫЭЮЯ';
+function hasVowel(text) {
+  for (const ch of text) if (VOWELS.includes(ch)) return true;
   return false;
 }
 
-// Ism: kamida 3 harf, unli bor, faqat harflar
 function isValidName(text) {
   if (text.length < 3 || text.length > 100) return false;
-  // Faqat harflar, bo'shliq, apostrof, tire
   if (!/^[a-zA-ZА-Яа-яЁёўғҳқЎҒҲҚʻ'`\s\-\.]+$/.test(text)) return false;
   const letters = text.match(/[a-zA-ZА-Яа-яЁёўғҳқЎҒҲҚ]/g);
   if (!letters || letters.length < 3) return false;
-  // Haqiqiy so'zda unli bor
   if (!hasVowel(text)) return false;
-  // 4 va undan ortiq bir xil harf ketma-ket bo'lmasin (masalan: "aaaa")
   if (/(.)\1{3,}/.test(text)) return false;
   return true;
 }
 
-// Yo'nalish: kamida 3 harf, unli bor
 function isValidDestination(text) {
   if (text.length < 3 || text.length > 100) return false;
   if (!/^[a-zA-ZА-Яа-яЁёўғҳқЎҒҲҚʻ'`\s\-,\.]+$/.test(text)) return false;
@@ -55,52 +64,10 @@ function isValidDestination(text) {
   return true;
 }
 
-// Sana: aniq formatlar
-function isValidDate(text) {
-  if (text.length < 3 || text.length > 50) return false;
-  const cleaned = text.trim().toLowerCase();
-
-  // DD.MM.YYYY / DD-MM-YYYY / DD/MM/YYYY
-  if (/^\d{1,2}[\.\-\/]\d{1,2}[\.\-\/]\d{2,4}$/.test(cleaned)) return true;
-
-  // DD month_name (oy nomi bilan)
-  const monthsUz = 'yanvar|fevral|mart|aprel|may|iyun|iyul|avgust|sentyabr|oktyabr|noyabr|dekabr';
-  const monthsRu = 'январ|феврал|март|апрел|мая|май|июн|июл|август|сентябр|октябр|ноябр|декабр';
-  const monthRe = new RegExp(`^\\d{1,2}[\\s\\-]*(${monthsUz}|${monthsRu})`, 'i');
-  if (monthRe.test(cleaned)) return true;
-
-  // Month_name DD (masalan: "August 19" yoki "19 август")
-  const monthFirstRe = new RegExp(`^(${monthsUz}|${monthsRu})[\\s\\-]*\\d{1,2}`, 'i');
-  if (monthFirstRe.test(cleaned)) return true;
-
-  // DD-DD month (oraliq: 19-25 avgust)
-  const rangeRe = new RegExp(`^\\d{1,2}\\s*-\\s*\\d{1,2}[\\s\\-]*(${monthsUz}|${monthsRu})`, 'i');
-  if (rangeRe.test(cleaned)) return true;
-
-  return false;
-}
-
-// Son tekshirish (min-max oralig'ida)
 function isValidNumber(text, min, max) {
   if (!/^\d+$/.test(text.trim())) return false;
   const num = parseInt(text.trim());
   return num >= (min || 1) && num <= (max || 999);
-}
-
-// Yoshlar: kerakli son va to'g'ri qiymatlar
-function parseAges(text) {
-  // Faqat raqamlar, vergul, bo'shliq, nuqta vergul
-  if (!/^[\d,;\s]+$/.test(text)) return null;
-  const parts = text.split(/[,;\s]+/).filter(x => x.length > 0);
-  const ages = [];
-  for (const p of parts) {
-    if (!/^\d+$/.test(p)) return null;
-    const n = parseInt(p);
-    if (isNaN(n) || n < 0 || n > 100) return null;
-    ages.push(n);
-  }
-  if (ages.length === 0) return null;
-  return ages;
 }
 
 const survey = new Scenes.BaseScene(SURVEY_SCENE);
@@ -114,37 +81,49 @@ survey.enter(async (ctx) => {
 async function promptState(ctx, state) {
   const lang = ctx.session.lang || 'uz';
   ctx.session.state = state;
+  const opts = { parse_mode: 'Markdown' };
 
   switch (state) {
     case S.PICK_LANG:
       await ctx.reply(t('uz', 'chooseLanguage'), kb.languageInline());
       break;
     case S.ASK_NAME:
-      await ctx.reply(t(lang, 'askName'), { parse_mode: 'Markdown' });
+      await ctx.reply(t(lang, 'askName'), opts);
       break;
     case S.ASK_DEST:
-      await ctx.reply(t(lang, 'askDestination'), { parse_mode: 'Markdown' });
+      await ctx.reply(t(lang, 'askDestination'), { ...opts, ...kb.destinationsInline(lang) });
+      break;
+    case S.ASK_CUSTOM_DEST:
+      await ctx.reply(t(lang, 'askCustomDestination'), { ...opts, ...kb.backInline(lang) });
       break;
     case S.ASK_DATE:
-      await ctx.reply(t(lang, 'askDate'), { parse_mode: 'Markdown' });
+      await ctx.reply(t(lang, 'askDate'), kb.datesInline(lang));
       break;
     case S.ASK_PEOPLE:
-      await ctx.reply(t(lang, 'askPeople'), { parse_mode: 'Markdown' });
+      await ctx.reply(t(lang, 'askPeople'), kb.peopleInline(lang));
+      break;
+    case S.ASK_PEOPLE_CUSTOM:
+      await ctx.reply(t(lang, 'askPeopleCustom'), kb.backInline(lang));
       break;
     case S.ASK_CHILDREN:
       await ctx.reply(t(lang, 'askChildren'), kb.yesNoInline(lang));
       break;
     case S.ASK_CHILDREN_COUNT:
-      await ctx.reply(t(lang, 'askChildrenCount'));
+      await ctx.reply(t(lang, 'askChildrenCount'), kb.childrenCountInline(lang));
       break;
-    case S.ASK_CHILDREN_AGES:
-      await ctx.reply(t(lang, 'askChildrenAges'), { parse_mode: 'Markdown' });
+    case S.ASK_CHILD_AGE: {
+      const idx = ctx.session.currentChild || 1;
+      const total = parseInt(ctx.session.surveyData.children_count) || 0;
+      const msg = t(lang, 'askChildAge').replace(/\{n\}/g, idx).replace('{total}', total);
+      await ctx.reply(msg, kb.childAgeInline(lang));
       break;
+    }
     case S.ASK_TIME:
       await ctx.reply(t(lang, 'askContactTime'), kb.contactTimesInline(lang));
       break;
     case S.ASK_PHONE:
       await ctx.reply(t(lang, 'askPhone'), kb.phoneReply(lang));
+      await ctx.reply('👇', kb.backInline(lang));
       break;
   }
 }
@@ -162,7 +141,7 @@ survey.command(['til', 'language'], async (ctx) => {
 
 survey.command('admin', async (ctx) => {
   if (!dbApi.isAdmin(ctx.from.id)) {
-    return ctx.reply("❌ Sizda admin huquqlari yo'q.");
+    return ctx.reply("Sizda admin huquqlari yo'q.");
   }
   await ctx.scene.leave();
   return ctx.scene.enter('admin');
@@ -179,22 +158,14 @@ survey.command('help', async (ctx) => {
   await ctx.reply(msg);
 });
 
-survey.command('chatid', async (ctx) => {
-  await ctx.reply('Chat ID: `' + ctx.chat.id + '`', { parse_mode: 'Markdown' });
-});
-
-// ============ TIL ============
+// ============ TIL TANLASH ============
 survey.action(/^lang_(uz|ru)$/, async (ctx) => {
   const newLang = ctx.match[1];
   const wasFirstTime = ctx.session.state === S.PICK_LANG;
   ctx.session.lang = newLang;
   dbApi.setUserLanguage(ctx.from.id, newLang);
   await ctx.answerCbQuery(newLang === 'uz' ? "✅ O'zbek tili" : '✅ Русский язык');
-
-  try {
-    await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
-  } catch (e) { /* ignore */ }
-
+  try { await ctx.editMessageReplyMarkup({ inline_keyboard: [] }); } catch (e) {}
   if (wasFirstTime) {
     await ctx.reply(t(newLang, 'welcome'));
     await promptState(ctx, S.ASK_NAME);
@@ -203,18 +174,112 @@ survey.action(/^lang_(uz|ru)$/, async (ctx) => {
   }
 });
 
-survey.action(/^children_(yes|no)$/, async (ctx) => {
-  if (ctx.session.state !== S.ASK_CHILDREN) {
-    return ctx.answerCbQuery();
-  }
-  const hasChildren = ctx.match[1] === 'yes';
-  ctx.session.surveyData.has_children = hasChildren;
+// ============ ORTGA ============
+survey.action('back', async (ctx) => {
   await ctx.answerCbQuery();
+  try { await ctx.deleteMessage(); } catch (e) {}
+  const hasChildren = ctx.session.surveyData && ctx.session.surveyData.has_children;
+  const currentState = ctx.session.state;
+  const prev = previousState(currentState, hasChildren);
+  if (!prev) return;
 
-  try {
-    await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
-  } catch (e) { /* ignore */ }
+  // Joriy qadam ma'lumotini tozalash
+  const data = ctx.session.surveyData || {};
+  if (currentState === S.ASK_DEST || currentState === S.ASK_CUSTOM_DEST) {
+    delete data.destination;
+  } else if (currentState === S.ASK_DATE) {
+    delete data.travel_date;
+    delete data.travel_date_key;
+  } else if (currentState === S.ASK_PEOPLE || currentState === S.ASK_PEOPLE_CUSTOM) {
+    delete data.people_count;
+  } else if (currentState === S.ASK_CHILDREN) {
+    delete data.has_children;
+  } else if (currentState === S.ASK_CHILDREN_COUNT) {
+    delete data.children_count;
+  } else if (currentState === S.ASK_CHILD_AGE) {
+    // Bola yoshi tanlash o'rtasida: bitta orqaga
+    if (ctx.session.currentChild && ctx.session.currentChild > 1) {
+      ctx.session.currentChild--;
+      if (ctx.session.childAges) ctx.session.childAges.pop();
+      await promptState(ctx, S.ASK_CHILD_AGE);
+      return;
+    } else {
+      // 1-bola, bolalar soniga qaytish
+      delete data.children_count;
+      ctx.session.currentChild = 0;
+      ctx.session.childAges = [];
+    }
+  } else if (currentState === S.ASK_TIME) {
+    delete data.contact_time;
+  }
+  await promptState(ctx, prev);
+});
 
+// ============ YO'NALISH ============
+survey.action(/^dest:(.+)$/, async (ctx) => {
+  if (ctx.session.state !== S.ASK_DEST) return ctx.answerCbQuery();
+  const val = ctx.match[1];
+  await ctx.answerCbQuery();
+  try { await ctx.editMessageReplyMarkup({ inline_keyboard: [] }); } catch (e) {}
+  if (val === 'other') {
+    await promptState(ctx, S.ASK_CUSTOM_DEST);
+    return;
+  }
+  const idx = parseInt(val);
+  const tour = kb.TOURS[idx];
+  if (!tour) return;
+  ctx.session.surveyData.destination = tour;
+  await promptState(ctx, S.ASK_DATE);
+});
+
+// ============ SANA ============
+survey.action(/^date:(.+)$/, async (ctx) => {
+  if (ctx.session.state !== S.ASK_DATE) return ctx.answerCbQuery();
+  const key = ctx.match[1];
+  const lang = ctx.session.lang || 'uz';
+  const option = kb.DATE_OPTIONS.find(o => o.key === key);
+  if (!option) return ctx.answerCbQuery();
+  await ctx.answerCbQuery();
+  try { await ctx.editMessageReplyMarkup({ inline_keyboard: [] }); } catch (e) {}
+  ctx.session.surveyData.travel_date = t(lang, option.tKey);
+  await promptState(ctx, S.ASK_PEOPLE);
+});
+
+// ============ ODAM SONI ============
+survey.action(/^people:(.+)$/, async (ctx) => {
+  if (ctx.session.state !== S.ASK_PEOPLE) return ctx.answerCbQuery();
+  const val = ctx.match[1];
+  await ctx.answerCbQuery();
+  try { await ctx.editMessageReplyMarkup({ inline_keyboard: [] }); } catch (e) {}
+  if (val === 'more') {
+    await promptState(ctx, S.ASK_PEOPLE_CUSTOM);
+    return;
+  }
+  ctx.session.surveyData.people_count = val;
+  await promptState(ctx, S.ASK_CHILDREN);
+});
+
+// ============ BOLALAR HA/YO'Q ============
+survey.action(/^children_(yes|no)$/, async (ctx) => {
+  if (ctx.session.state !== S.ASK_CHILDREN) return ctx.answerCbQuery();
+  const hasChildren = ctx.match[1] === 'yes';
+  await ctx.answerCbQuery();
+  try { await ctx.editMessageReplyMarkup({ inline_keyboard: [] }); } catch (e) {}
+
+  // Agar 1 kishi bo'lsa va bolalar bor desa — math xato bo'lib qoladi
+  const peopleCount = parseInt(ctx.session.surveyData.people_count) || 0;
+  if (hasChildren && peopleCount <= 1) {
+    const lang = ctx.session.lang || 'uz';
+    await ctx.reply(
+      lang === 'uz'
+        ? "❌ Bolalar bo'lsa, kamida 2 kishi bo'lishi kerak (1 katta + bolalar)."
+        : '❌ Если есть дети, нужно минимум 2 человека (1 взрослый + дети).'
+    );
+    await promptState(ctx, S.ASK_CHILDREN);
+    return;
+  }
+
+  ctx.session.surveyData.has_children = hasChildren;
   if (hasChildren) {
     await promptState(ctx, S.ASK_CHILDREN_COUNT);
   } else {
@@ -222,38 +287,75 @@ survey.action(/^children_(yes|no)$/, async (ctx) => {
   }
 });
 
-survey.action(/^time_(\d+)$/, async (ctx) => {
-  if (ctx.session.state !== S.ASK_TIME) {
-    return ctx.answerCbQuery();
+// ============ BOLALAR SONI ============
+survey.action(/^cc:(\d+)$/, async (ctx) => {
+  if (ctx.session.state !== S.ASK_CHILDREN_COUNT) return ctx.answerCbQuery();
+  const cnt = parseInt(ctx.match[1]);
+  const peopleCount = parseInt(ctx.session.surveyData.people_count) || 0;
+  const lang = ctx.session.lang || 'uz';
+  if (cnt >= peopleCount) {
+    await ctx.answerCbQuery();
+    const msg = t(lang, 'invalidChildrenMath').replace('{p}', peopleCount).replace('{c}', cnt);
+    await ctx.reply(msg);
+    return;
   }
+  await ctx.answerCbQuery();
+  try { await ctx.editMessageReplyMarkup({ inline_keyboard: [] }); } catch (e) {}
+  ctx.session.surveyData.children_count = String(cnt);
+  ctx.session.currentChild = 1;
+  ctx.session.childAges = [];
+  await promptState(ctx, S.ASK_CHILD_AGE);
+});
+
+// ============ BOLA YOSHI ============
+survey.action(/^age:(.+)$/, async (ctx) => {
+  if (ctx.session.state !== S.ASK_CHILD_AGE) return ctx.answerCbQuery();
+  const key = ctx.match[1];
+  const lang = ctx.session.lang || 'uz';
+  const option = kb.AGE_OPTIONS.find(o => o.key === key);
+  if (!option) return ctx.answerCbQuery();
+  await ctx.answerCbQuery();
+  try { await ctx.editMessageReplyMarkup({ inline_keyboard: [] }); } catch (e) {}
+
+  if (!ctx.session.childAges) ctx.session.childAges = [];
+  ctx.session.childAges.push(t(lang, option.tKey));
+
+  const total = parseInt(ctx.session.surveyData.children_count) || 0;
+  if (ctx.session.currentChild >= total) {
+    // Hammasi tanlandi
+    ctx.session.surveyData.children_ages = ctx.session.childAges.join(', ');
+    await promptState(ctx, S.ASK_TIME);
+  } else {
+    ctx.session.currentChild++;
+    await promptState(ctx, S.ASK_CHILD_AGE);
+  }
+});
+
+// ============ BOG'LANISH VAQTI ============
+survey.action(/^time_(\d+)$/, async (ctx) => {
+  if (ctx.session.state !== S.ASK_TIME) return ctx.answerCbQuery();
   const id = parseInt(ctx.match[1]);
   const times = dbApi.getContactTimes();
   const time = times.find(x => x.id === id);
-  if (!time) {
-    return ctx.answerCbQuery('❌');
-  }
+  if (!time) return ctx.answerCbQuery('❌');
   ctx.session.surveyData.contact_time = time.label;
   await ctx.answerCbQuery('✅ ' + time.label);
-
-  try {
-    await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
-  } catch (e) { /* ignore */ }
-
+  try { await ctx.editMessageReplyMarkup({ inline_keyboard: [] }); } catch (e) {}
   await promptState(ctx, S.ASK_PHONE);
 });
 
+// ============ KONTAKT ============
 survey.on('contact', async (ctx) => {
   if (ctx.session.state !== S.ASK_PHONE) return;
-  const phone = ctx.message.contact.phone_number;
-  ctx.session.surveyData.phone = phone;
+  ctx.session.surveyData.phone = ctx.message.contact.phone_number;
   await finishSurvey(ctx);
 });
 
+// ============ MATN ============
 survey.on('text', async (ctx) => {
   const text = ctx.message.text.trim();
   const lang = ctx.session.lang || 'uz';
   const state = ctx.session.state;
-
   if (text.startsWith('/')) return;
 
   switch (state) {
@@ -271,6 +373,10 @@ survey.on('text', async (ctx) => {
       break;
 
     case S.ASK_DEST:
+      await ctx.reply(t(lang, 'askDestination'), { parse_mode: 'Markdown', ...kb.destinationsInline(lang) });
+      break;
+
+    case S.ASK_CUSTOM_DEST:
       if (!isValidDestination(text)) {
         await ctx.reply(t(lang, 'invalidDestination'), { parse_mode: 'Markdown' });
         return;
@@ -280,15 +386,15 @@ survey.on('text', async (ctx) => {
       break;
 
     case S.ASK_DATE:
-      if (!isValidDate(text)) {
-        await ctx.reply(t(lang, 'invalidDate'), { parse_mode: 'Markdown' });
-        return;
-      }
-      ctx.session.surveyData.travel_date = text;
-      await promptState(ctx, S.ASK_PEOPLE);
+      // Tugma tanlash kerak
+      await ctx.reply(t(lang, 'askDate'), kb.datesInline(lang));
       break;
 
     case S.ASK_PEOPLE:
+      await ctx.reply(t(lang, 'askPeople'), kb.peopleInline(lang));
+      break;
+
+    case S.ASK_PEOPLE_CUSTOM:
       if (!isValidNumber(text, 1, 50)) {
         await ctx.reply(t(lang, 'invalidPeople'), { parse_mode: 'Markdown' });
         return;
@@ -301,42 +407,15 @@ survey.on('text', async (ctx) => {
       await ctx.reply(t(lang, 'askChildren'), kb.yesNoInline(lang));
       break;
 
-    case S.ASK_CHILDREN_COUNT: {
-      if (!isValidNumber(text, 1, 50)) {
-        await ctx.reply(t(lang, 'invalidChildrenCount'), { parse_mode: 'Markdown' });
-        return;
-      }
-      const childrenCount = parseInt(text);
-      const peopleCount = parseInt(ctx.session.surveyData.people_count) || 0;
-      // Bolalar soni umumiy odam sonidan kam bo'lishi kerak (kamida 1 ta katta odam kerak)
-      if (childrenCount >= peopleCount) {
-        const msg = t(lang, 'invalidChildrenMath')
-          .replace('{p}', peopleCount)
-          .replace('{c}', childrenCount);
-        await ctx.reply(msg);
-        return;
-      }
-      ctx.session.surveyData.children_count = text;
-      await promptState(ctx, S.ASK_CHILDREN_AGES);
+    case S.ASK_CHILDREN_COUNT:
+      await ctx.reply(t(lang, 'askChildrenCount'), kb.childrenCountInline(lang));
       break;
-    }
 
-    case S.ASK_CHILDREN_AGES: {
-      const ages = parseAges(text);
-      if (!ages) {
-        await ctx.reply(t(lang, 'invalidAges'), { parse_mode: 'Markdown' });
-        return;
-      }
-      const expectedCount = parseInt(ctx.session.surveyData.children_count) || 0;
-      if (ages.length !== expectedCount) {
-        const msg = t(lang, 'invalidAgesCount')
-          .replace('{n}', expectedCount)
-          .replace('{a}', ages.length);
-        await ctx.reply(msg, { parse_mode: 'Markdown' });
-        return;
-      }
-      ctx.session.surveyData.children_ages = ages.join(', ');
-      await promptState(ctx, S.ASK_TIME);
+    case S.ASK_CHILD_AGE: {
+      const idx = ctx.session.currentChild || 1;
+      const total = parseInt(ctx.session.surveyData.children_count) || 0;
+      const msg = t(lang, 'askChildAge').replace(/\{n\}/g, idx).replace('{total}', total);
+      await ctx.reply(msg, kb.childAgeInline(lang));
       break;
     }
 
@@ -365,13 +444,7 @@ async function finishSurvey(ctx) {
   const lang = ctx.session.lang || 'uz';
   ctx.session.surveyData.telegram_id = ctx.from.id;
   ctx.session.surveyData.language = lang;
-
-  try {
-    dbApi.saveSurvey(ctx.session.surveyData);
-  } catch (e) {
-    console.error('DB saqlashda xato:', e);
-  }
-
+  try { dbApi.saveSurvey(ctx.session.surveyData); } catch (e) { console.error('DB:', e); }
   await sendToGroup(ctx, ctx.session.surveyData);
   await ctx.reply(t(lang, 'finish'), kb.removeReply());
   return ctx.scene.leave();
@@ -380,54 +453,33 @@ async function finishSurvey(ctx) {
 async function sendToGroup(ctx, data) {
   const lang = data.language;
   const groupId = dbApi.getSetting('group_id') || process.env.GROUP_ID;
-  if (!groupId) {
-    console.error('GROUP_ID belgilanmagan!');
-    return;
-  }
-
+  if (!groupId) return;
   const childrenText = data.has_children
     ? `${t(lang, 'g_childrenYes')} (${data.children_count}, ${t(lang, 'g_childrenAges')}: ${data.children_ages})`
     : t(lang, 'g_childrenNo');
-
-  const username = ctx.from.username ? `@${ctx.from.username}` : '—';
-
+  const username = ctx.from.username ? '@' + ctx.from.username : '—';
   const message =
-    `${t(lang, 'g_newRequest')}\n\n` +
-    `${t(lang, 'g_name')}: ${data.full_name}\n` +
-    `${t(lang, 'g_destination')}: ${data.destination}\n` +
-    `${t(lang, 'g_date')}: ${data.travel_date}\n` +
-    `${t(lang, 'g_people')}: ${data.people_count}\n` +
-    `${t(lang, 'g_children')}: ${childrenText}\n` +
-    `${t(lang, 'g_contactTime')}: ${data.contact_time}\n` +
-    `${t(lang, 'g_phone')}: ${data.phone}\n` +
-    `${t(lang, 'g_username')}: ${username}`;
-
+    t(lang, 'g_newRequest') + '\n\n' +
+    t(lang, 'g_name') + ': ' + data.full_name + '\n' +
+    t(lang, 'g_destination') + ': ' + data.destination + '\n' +
+    t(lang, 'g_date') + ': ' + data.travel_date + '\n' +
+    t(lang, 'g_people') + ': ' + data.people_count + '\n' +
+    t(lang, 'g_children') + ': ' + childrenText + '\n' +
+    t(lang, 'g_contactTime') + ': ' + data.contact_time + '\n' +
+    t(lang, 'g_phone') + ': ' + data.phone + '\n' +
+    t(lang, 'g_username') + ': ' + username;
   try {
     await ctx.telegram.sendMessage(groupId, message);
-    console.log('OK - Guruhga yuborildi: ' + groupId);
-    return;
+    console.log('OK guruhga:', groupId);
   } catch (err) {
-    console.error('XATO - Guruhga (' + groupId + ') yuborib bo\'lmadi: ' + err.message);
-
+    console.error('Guruh xato:', err.message);
     if (!String(groupId).startsWith('-100')) {
       const altId = '-100' + String(groupId).replace(/^-/, '');
       try {
         await ctx.telegram.sendMessage(altId, message);
         dbApi.setSetting('group_id', altId);
-        console.log('OK - Yangi ID bilan: ' + altId);
-        return;
-      } catch (err2) { /* ignore */ }
+      } catch (e2) {}
     }
-
-    try {
-      const superAdminId = process.env.SUPER_ADMIN_ID;
-      if (superAdminId) {
-        await ctx.telegram.sendMessage(
-          superAdminId,
-          'Guruhga xabar yuborib bo\'lmadi!\nGuruh ID: ' + groupId + '\nXato: ' + err.message
-        );
-      }
-    } catch (e) { /* ignore */ }
   }
 }
 

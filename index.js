@@ -17,7 +17,6 @@ init();
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const stage = new Scenes.Stage([survey, admin]);
 
-// Bot guruhga qo'shilganini ushlash
 bot.on('my_chat_member', async (ctx) => {
   try {
     const chat = ctx.myChatMember.chat;
@@ -28,35 +27,24 @@ bot.on('my_chat_member', async (ctx) => {
       if (superAdmin) {
         await ctx.telegram.sendMessage(
           superAdmin,
-          'Bot guruhga qo\'shildi!\n\n' +
-          'Guruh nomi: ' + chat.title + '\n' +
-          'Guruh ID: ' + chat.id + '\n' +
-          'Tur: ' + chat.type + '\n\n' +
-          'Bu ID ni .env faylda GROUP_ID sifatida yozing yoki\n' +
-          '/admin -> Sozlamalar -> Guruh ID o\'zgartirish orqali kiriting.'
+          "Bot guruhga qo'shildi!\n\nGuruh nomi: " + chat.title + "\nGuruh ID: " + chat.id + "\nTur: " + chat.type
         );
       }
-      console.log('Bot guruhga qo\'shildi:', chat.title, 'ID:', chat.id);
+      console.log("Bot guruhga qo'shildi:", chat.title, "ID:", chat.id);
     }
   } catch (e) {
     console.error('my_chat_member xato:', e.message);
   }
 });
 
-// /chatid - guruhda ID ni ko'rsatish
 bot.command('chatid', async (ctx) => {
-  const id = ctx.chat.id;
-  const type = ctx.chat.type;
-  await ctx.reply('Chat ID: `' + id + '`\nTur: ' + type, { parse_mode: 'Markdown' });
-  console.log('chatid so\'rovi:', id, type);
+  await ctx.reply('Chat ID: `' + ctx.chat.id + '`\nTur: ' + ctx.chat.type, { parse_mode: 'Markdown' });
 });
 
 bot.use(session());
 bot.use(stage.middleware());
 
-// Foydalanuvchini ro'yxatga olish va bloklanganlikni tekshirish
 bot.use(async (ctx, next) => {
-  // Guruh xabarlarini o'tkazib yuborish (faqat shaxsiy chat)
   if (ctx.chat && (ctx.chat.type === 'group' || ctx.chat.type === 'supergroup')) {
     return next();
   }
@@ -80,7 +68,6 @@ bot.use(async (ctx, next) => {
   return next();
 });
 
-// /start
 bot.command('start', async (ctx) => {
   if (ctx.chat.type !== 'private') return;
   if (ctx.session) {
@@ -90,14 +77,12 @@ bot.command('start', async (ctx) => {
   return ctx.scene.enter(SURVEY_SCENE);
 });
 
-// /til
 bot.command(['til', 'language'], async (ctx) => {
   if (ctx.chat.type !== 'private') return;
   const lang = (ctx.session && ctx.session.lang) || dbApi.getUserLanguage(ctx.from.id) || 'uz';
   await ctx.reply(t(lang, 'chooseLanguage'), kb.languageInline());
 });
 
-// Til tanlash callback (scene tashqarisida)
 bot.action(/^lang_(uz|ru)$/, async (ctx) => {
   const newLang = ctx.match[1];
   if (ctx.session) ctx.session.lang = newLang;
@@ -112,7 +97,6 @@ bot.action(/^lang_(uz|ru)$/, async (ctx) => {
   await ctx.reply(msg);
 });
 
-// /admin
 bot.command('admin', async (ctx) => {
   if (ctx.chat.type !== 'private') return;
   if (!dbApi.isAdmin(ctx.from.id)) {
@@ -121,12 +105,10 @@ bot.command('admin', async (ctx) => {
   return ctx.scene.enter(ADMIN_SCENE);
 });
 
-// /myid
 bot.command('myid', async (ctx) => {
   await ctx.reply('Sizning Telegram ID: `' + ctx.from.id + '`', { parse_mode: 'Markdown' });
 });
 
-// /help
 bot.command('help', async (ctx) => {
   const isAdmin = ctx.from && dbApi.isAdmin(ctx.from.id);
   let msg = "/start - Boshlash\n/til - Tilni o'zgartirish\n/chatid - Chat ID\n/myid - Telegram ID";
@@ -161,7 +143,7 @@ async function setBotCommands() {
           { scope: { type: 'chat', chat_id: a.telegram_id } }
         );
       } catch (e) {
-        console.error('setMyCommands(admin ' + a.telegram_id + ') xato:', e.message);
+        // Foydalanuvchi botga yozmagan bo'lsa xato beradi — bu normal
       }
     }
   } catch (e) {
@@ -169,7 +151,7 @@ async function setBotCommands() {
   }
 }
 
-// HTTP server — UptimeRobot uchun (botni uxlatmaslik)
+// HTTP server — UptimeRobot uchun
 const app = express();
 const PORT = process.env.PORT || 3000;
 app.get('/', (req, res) => {
@@ -182,12 +164,35 @@ app.listen(PORT, () => {
   console.log('HTTP server listening on port:', PORT);
 });
 
-bot.launch().then(async () => {
-  await setBotCommands();
-  console.log('Bot ishga tushdi!');
-  console.log('Guruh ID:', dbApi.getSetting('group_id') || process.env.GROUP_ID);
-  console.log('Super Admin:', process.env.SUPER_ADMIN_ID);
-});
+// Botni ishga tushirish (avval webhook tozalash)
+async function startBot() {
+  try {
+    await bot.telegram.deleteWebhook({ drop_pending_updates: true });
+    console.log('Webhook tozalandi va eski xabarlar tashlandi');
+  } catch (e) {
+    console.error('deleteWebhook xato:', e.message);
+  }
 
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
+  // Eski polling instance to'xtashini kutish
+  await new Promise(function(r) { setTimeout(r, 5000); });
+
+  try {
+    await bot.launch({ dropPendingUpdates: true });
+    await setBotCommands();
+    console.log('Bot ishga tushdi!');
+    console.log('Guruh ID:', dbApi.getSetting('group_id') || process.env.GROUP_ID);
+    console.log('Super Admin:', process.env.SUPER_ADMIN_ID);
+  } catch (err) {
+    console.error('Bot ishga tushishda xato:', err.message);
+    // 30 soniya kutib qaytadan urinish
+    setTimeout(function() {
+      console.log('Qaytadan urinish...');
+      startBot().catch(function(e) { console.error('Qayta urinish xato:', e.message); });
+    }, 30000);
+  }
+}
+
+startBot();
+
+process.once('SIGINT', function() { bot.stop('SIGINT'); });
+process.once('SIGTERM', function() { bot.stop('SIGTERM'); });
