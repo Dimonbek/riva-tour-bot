@@ -5,7 +5,6 @@ const kb = require('../keyboards');
 
 const SURVEY_SCENE = 'survey';
 
-// Yangi tartib: PHONE birinchi, NAME yo'q
 const S = {
   PICK_LANG: 'pick_lang',
   ASK_PHONE: 'ask_phone',
@@ -22,7 +21,7 @@ const S = {
 
 function previousState(state, hasChildren) {
   switch (state) {
-    case S.ASK_PHONE: return null; // birinchi qadam
+    case S.ASK_PHONE: return null;
     case S.ASK_DEST: return S.ASK_PHONE;
     case S.ASK_CUSTOM_DEST: return S.ASK_DEST;
     case S.ASK_DATE: return S.ASK_DEST;
@@ -55,57 +54,84 @@ function isValidNumber(text, min, max) {
   return num >= (min || 1) && num <= (max || 999);
 }
 
+// ============ XABARLARNI BOSHQARISH ============
+async function deletePrevBot(ctx) {
+  if (ctx.session.botMsgIds && ctx.session.botMsgIds.length) {
+    for (const id of ctx.session.botMsgIds) {
+      try { await ctx.telegram.deleteMessage(ctx.chat.id, id); } catch (e) {}
+    }
+  }
+  ctx.session.botMsgIds = [];
+}
+
+function trackMsg(ctx, msg) {
+  if (!msg || !msg.message_id) return;
+  if (!ctx.session.botMsgIds) ctx.session.botMsgIds = [];
+  ctx.session.botMsgIds.push(msg.message_id);
+}
+
+async function tryDeleteUserMsg(ctx) {
+  if (ctx.message && ctx.message.message_id) {
+    try { await ctx.deleteMessage(ctx.message.message_id); } catch (e) {}
+  }
+}
+
 const survey = new Scenes.BaseScene(SURVEY_SCENE);
 
 survey.enter(async (ctx) => {
   ctx.session.surveyData = {};
   ctx.session.state = S.PICK_LANG;
-  await ctx.reply(t('uz', 'chooseLanguage'), kb.languageInline());
+  ctx.session.botMsgIds = [];
+  const sent = await ctx.reply(t('uz', 'chooseLanguage'), kb.languageInline());
+  trackMsg(ctx, sent);
 });
 
 async function promptState(ctx, state) {
+  await deletePrevBot(ctx);
   const lang = ctx.session.lang || 'uz';
   ctx.session.state = state;
   const opts = { parse_mode: 'Markdown' };
+  let sent;
   switch (state) {
     case S.PICK_LANG:
-      await ctx.reply(t('uz', 'chooseLanguage'), kb.languageInline());
+      sent = await ctx.reply(t('uz', 'chooseLanguage'), kb.languageInline());
       break;
     case S.ASK_PHONE:
-      await ctx.reply(t(lang, 'askPhone'), kb.phoneReply(lang));
+      sent = await ctx.reply(t(lang, 'askPhone'), kb.phoneReply(lang));
       break;
     case S.ASK_DEST:
-      await ctx.reply(t(lang, 'askDestination'), { ...opts, ...kb.destinationsInline(lang) });
+      sent = await ctx.reply(t(lang, 'askDestination'), { ...opts, ...kb.destinationsInline(lang) });
       break;
     case S.ASK_CUSTOM_DEST:
-      await ctx.reply(t(lang, 'askCustomDestination'), { ...opts, ...kb.backInline(lang) });
+      sent = await ctx.reply(t(lang, 'askCustomDestination'), { ...opts, ...kb.backInline(lang) });
       break;
     case S.ASK_DATE:
-      await ctx.reply(t(lang, 'askDate'), kb.datesInline(lang));
+      sent = await ctx.reply(t(lang, 'askDate'), kb.datesInline(lang));
       break;
     case S.ASK_PEOPLE:
-      await ctx.reply(t(lang, 'askPeople'), kb.peopleInline(lang));
+      sent = await ctx.reply(t(lang, 'askPeople'), kb.peopleInline(lang));
       break;
     case S.ASK_PEOPLE_CUSTOM:
-      await ctx.reply(t(lang, 'askPeopleCustom'), kb.backInline(lang));
+      sent = await ctx.reply(t(lang, 'askPeopleCustom'), kb.backInline(lang));
       break;
     case S.ASK_CHILDREN:
-      await ctx.reply(t(lang, 'askChildren'), kb.yesNoInline(lang));
+      sent = await ctx.reply(t(lang, 'askChildren'), kb.yesNoInline(lang));
       break;
     case S.ASK_CHILDREN_COUNT:
-      await ctx.reply(t(lang, 'askChildrenCount'), kb.childrenCountInline(lang));
+      sent = await ctx.reply(t(lang, 'askChildrenCount'), kb.childrenCountInline(lang));
       break;
     case S.ASK_CHILD_AGE: {
       const idx = ctx.session.currentChild || 1;
       const total = parseInt(ctx.session.surveyData.children_count) || 0;
       const msg = t(lang, 'askChildAge').replace(/\{n\}/g, idx).replace('{total}', total);
-      await ctx.reply(msg, kb.childAgeInline(lang));
+      sent = await ctx.reply(msg, kb.childAgeInline(lang));
       break;
     }
     case S.ASK_TIME:
-      await ctx.reply(t(lang, 'askContactTime'), kb.contactTimesInline(lang));
+      sent = await ctx.reply(t(lang, 'askContactTime'), kb.contactTimesInline(lang));
       break;
   }
+  trackMsg(ctx, sent);
 }
 
 survey.command('start', async (ctx) => {
@@ -141,9 +167,7 @@ survey.action(/^lang_(uz|ru)$/, async (ctx) => {
   ctx.session.lang = newLang;
   dbApi.setUserLanguage(ctx.from.id, newLang);
   await ctx.answerCbQuery(newLang === 'uz' ? "✅ O'zbek tili" : '✅ Русский язык');
-  try { await ctx.editMessageReplyMarkup({ inline_keyboard: [] }); } catch (e) {}
   if (wasFirstTime) {
-    await ctx.reply(t(newLang, 'welcome'));
     await promptState(ctx, S.ASK_PHONE);
   } else {
     await promptState(ctx, ctx.session.state);
@@ -152,7 +176,6 @@ survey.action(/^lang_(uz|ru)$/, async (ctx) => {
 
 survey.action('back', async (ctx) => {
   await ctx.answerCbQuery();
-  try { await ctx.deleteMessage(); } catch (e) {}
   const hasChildren = ctx.session.surveyData && ctx.session.surveyData.has_children;
   const currentState = ctx.session.state;
   const prev = previousState(currentState, hasChildren);
@@ -189,7 +212,6 @@ survey.action(/^dest:(.+)$/, async (ctx) => {
   if (ctx.session.state !== S.ASK_DEST) return ctx.answerCbQuery();
   const val = ctx.match[1];
   await ctx.answerCbQuery();
-  try { await ctx.editMessageReplyMarkup({ inline_keyboard: [] }); } catch (e) {}
   if (val === 'other') return promptState(ctx, S.ASK_CUSTOM_DEST);
   const tour = kb.TOURS[parseInt(val)];
   if (!tour) return;
@@ -203,7 +225,6 @@ survey.action(/^date:(.+)$/, async (ctx) => {
   const option = kb.DATE_OPTIONS.find(o => o.key === ctx.match[1]);
   if (!option) return ctx.answerCbQuery();
   await ctx.answerCbQuery();
-  try { await ctx.editMessageReplyMarkup({ inline_keyboard: [] }); } catch (e) {}
   ctx.session.surveyData.travel_date = t(lang, option.tKey);
   await promptState(ctx, S.ASK_PEOPLE);
 });
@@ -213,7 +234,6 @@ survey.action(/^people:(.+)$/, async (ctx) => {
   const val = ctx.match[1];
   const lang = ctx.session.lang || 'uz';
   await ctx.answerCbQuery();
-  try { await ctx.editMessageReplyMarkup({ inline_keyboard: [] }); } catch (e) {}
   if (val === 'more') return promptState(ctx, S.ASK_PEOPLE_CUSTOM);
   if (val === 'partner') {
     ctx.session.surveyData.people_count = '1 (' + t(lang, 'peoplePartner') + ')';
@@ -227,15 +247,12 @@ survey.action(/^children_(yes|no)$/, async (ctx) => {
   if (ctx.session.state !== S.ASK_CHILDREN) return ctx.answerCbQuery();
   const hasChildren = ctx.match[1] === 'yes';
   await ctx.answerCbQuery();
-  try { await ctx.editMessageReplyMarkup({ inline_keyboard: [] }); } catch (e) {}
   const peopleCount = parseInt(ctx.session.surveyData.people_count) || 0;
   if (hasChildren && peopleCount <= 1) {
     const lang = ctx.session.lang || 'uz';
-    await ctx.reply(
-      lang === 'uz'
-        ? "❌ Bolalar bo'lsa, kamida 2 kishi bo'lishi kerak."
-        : '❌ Если есть дети, нужно минимум 2 человека.'
-    );
+    await ctx.reply(lang === 'uz'
+      ? "❌ Bolalar bo'lsa, kamida 2 kishi bo'lishi kerak."
+      : '❌ Если есть дети, нужно минимум 2 человека.');
     await promptState(ctx, S.ASK_CHILDREN);
     return;
   }
@@ -256,7 +273,6 @@ survey.action(/^cc:(\d+)$/, async (ctx) => {
     return;
   }
   await ctx.answerCbQuery();
-  try { await ctx.editMessageReplyMarkup({ inline_keyboard: [] }); } catch (e) {}
   ctx.session.surveyData.children_count = String(cnt);
   ctx.session.currentChild = 1;
   ctx.session.childAges = [];
@@ -269,7 +285,6 @@ survey.action(/^age:(.+)$/, async (ctx) => {
   const option = kb.AGE_OPTIONS.find(o => o.key === ctx.match[1]);
   if (!option) return ctx.answerCbQuery();
   await ctx.answerCbQuery();
-  try { await ctx.editMessageReplyMarkup({ inline_keyboard: [] }); } catch (e) {}
   if (!ctx.session.childAges) ctx.session.childAges = [];
   ctx.session.childAges.push(t(lang, option.tKey));
   const total = parseInt(ctx.session.surveyData.children_count) || 0;
@@ -290,15 +305,19 @@ survey.action(/^time_(\d+)$/, async (ctx) => {
   if (!time) return ctx.answerCbQuery('❌');
   ctx.session.surveyData.contact_time = time.label;
   await ctx.answerCbQuery('✅ ' + time.label);
-  try { await ctx.editMessageReplyMarkup({ inline_keyboard: [] }); } catch (e) {}
+  await deletePrevBot(ctx);
   await finishSurvey(ctx);
 });
 
 survey.on('contact', async (ctx) => {
   if (ctx.session.state !== S.ASK_PHONE) return;
   ctx.session.surveyData.phone = ctx.message.contact.phone_number;
-  // Phone reply klaviaturani olib tashlash
-  await ctx.reply('✅', kb.removeReply());
+  await tryDeleteUserMsg(ctx);
+  // Reply keyboard ni olib tashlash uchun bir martalik xabar
+  try {
+    const removeMsg = await ctx.reply('✅', kb.removeReply());
+    try { await ctx.telegram.deleteMessage(ctx.chat.id, removeMsg.message_id); } catch (e) {}
+  } catch (e) {}
   await promptState(ctx, S.ASK_DEST);
 });
 
@@ -318,12 +337,16 @@ survey.on('text', async (ctx) => {
         return;
       }
       ctx.session.surveyData.phone = text;
-      await ctx.reply('✅', kb.removeReply());
+      await tryDeleteUserMsg(ctx);
+      try {
+        const removeMsg = await ctx.reply('✅', kb.removeReply());
+        try { await ctx.telegram.deleteMessage(ctx.chat.id, removeMsg.message_id); } catch (e) {}
+      } catch (e) {}
       await promptState(ctx, S.ASK_DEST);
       break;
     }
     case S.ASK_DEST:
-      await ctx.reply(t(lang, 'askDestination'), { parse_mode: 'Markdown', ...kb.destinationsInline(lang) });
+      await promptState(ctx, S.ASK_DEST);
       break;
     case S.ASK_CUSTOM_DEST:
       if (!isValidDestination(text)) {
@@ -331,13 +354,14 @@ survey.on('text', async (ctx) => {
         return;
       }
       ctx.session.surveyData.destination = text;
+      await tryDeleteUserMsg(ctx);
       await promptState(ctx, S.ASK_DATE);
       break;
     case S.ASK_DATE:
-      await ctx.reply(t(lang, 'askDate'), kb.datesInline(lang));
+      await promptState(ctx, S.ASK_DATE);
       break;
     case S.ASK_PEOPLE:
-      await ctx.reply(t(lang, 'askPeople'), kb.peopleInline(lang));
+      await promptState(ctx, S.ASK_PEOPLE);
       break;
     case S.ASK_PEOPLE_CUSTOM:
       if (!isValidNumber(text, 1, 50)) {
@@ -345,23 +369,20 @@ survey.on('text', async (ctx) => {
         return;
       }
       ctx.session.surveyData.people_count = text;
+      await tryDeleteUserMsg(ctx);
       await promptState(ctx, S.ASK_CHILDREN);
       break;
     case S.ASK_CHILDREN:
-      await ctx.reply(t(lang, 'askChildren'), kb.yesNoInline(lang));
+      await promptState(ctx, S.ASK_CHILDREN);
       break;
     case S.ASK_CHILDREN_COUNT:
-      await ctx.reply(t(lang, 'askChildrenCount'), kb.childrenCountInline(lang));
+      await promptState(ctx, S.ASK_CHILDREN_COUNT);
       break;
-    case S.ASK_CHILD_AGE: {
-      const idx = ctx.session.currentChild || 1;
-      const total = parseInt(ctx.session.surveyData.children_count) || 0;
-      const msg = t(lang, 'askChildAge').replace(/\{n\}/g, idx).replace('{total}', total);
-      await ctx.reply(msg, kb.childAgeInline(lang));
+    case S.ASK_CHILD_AGE:
+      await promptState(ctx, S.ASK_CHILD_AGE);
       break;
-    }
     case S.ASK_TIME:
-      await ctx.reply(t(lang, 'askContactTime'), kb.contactTimesInline(lang));
+      await promptState(ctx, S.ASK_TIME);
       break;
     default:
       await ctx.scene.leave();
@@ -373,7 +394,6 @@ async function finishSurvey(ctx) {
   const lang = ctx.session.lang || 'uz';
   ctx.session.surveyData.telegram_id = ctx.from.id;
   ctx.session.surveyData.language = lang;
-  // Navbatdagi menejerni olish
   const manager = dbApi.getNextManager();
   ctx.session.surveyData.manager = manager;
   try { dbApi.saveSurvey(ctx.session.surveyData); } catch (e) { console.error('DB:', e); }
@@ -402,21 +422,38 @@ async function sendToGroup(ctx, data) {
     t(lang, 'g_username') + ': ' + username + '\n' +
     '👤 ' + (lang === 'uz' ? 'Foydalanuvchi' : 'Пользователь') + ': ' + userInfo;
   if (data.manager) {
-    message += '\n\n👨‍💼 ' + (lang === 'uz' ? 'Menejer' : 'Менеджер') + ': *' + data.manager + '*';
+    message += '\n\n👨‍💼 ' + (lang === 'uz' ? 'Menejer' : 'Менеджер') + ': ' + data.manager;
   }
+
   try {
-    await ctx.telegram.sendMessage(groupId, message, { parse_mode: 'Markdown' });
+    await ctx.telegram.sendMessage(groupId, message);
     console.log('OK guruhga:', groupId);
+    return;
   } catch (err) {
-    console.error('Guruh xato:', err.message);
-    if (!String(groupId).startsWith('-100')) {
-      const altId = '-100' + String(groupId).replace(/^-/, '');
-      try {
-        await ctx.telegram.sendMessage(altId, message, { parse_mode: 'Markdown' });
-        dbApi.setSetting('group_id', altId);
-      } catch (e2) {}
+    console.error('Guruh xato (' + groupId + '):', err.message);
+  }
+
+  if (!String(groupId).startsWith('-100')) {
+    const altId = '-100' + String(groupId).replace(/^-/, '');
+    try {
+      await ctx.telegram.sendMessage(altId, message);
+      dbApi.setSetting('group_id', altId);
+      console.log('OK guruhga (-100):', altId);
+      return;
+    } catch (e2) {
+      console.error('Guruh xato (' + altId + '):', e2.message);
     }
   }
+
+  try {
+    const superAdminId = process.env.SUPER_ADMIN_ID;
+    if (superAdminId) {
+      await ctx.telegram.sendMessage(
+        superAdminId,
+        "⚠️ Guruhga xabar yuborib bo'lmadi!\n\nGuruh ID: " + groupId + "\n\nSo'rov ma'lumotlari:\n\n" + message
+      );
+    }
+  } catch (e) {}
 }
 
 module.exports = { survey, SURVEY_SCENE };
