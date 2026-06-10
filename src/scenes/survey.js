@@ -54,14 +54,17 @@ function isValidNumber(text, min, max) {
   return num >= (min || 1) && num <= (max || 999);
 }
 
-// ============ XABARLARNI BOSHQARISH ============
-async function deletePrevBot(ctx) {
-  if (ctx.session.botMsgIds && ctx.session.botMsgIds.length) {
-    for (const id of ctx.session.botMsgIds) {
-      try { await ctx.telegram.deleteMessage(ctx.chat.id, id); } catch (e) {}
-    }
-  }
+// ============ XABARLARNI BOSHQARISH (FIRE-AND-FORGET) ============
+// Eski xabarlarni fonda o'chirish — kutilmasdan, parallel
+function deletePrevBot(ctx) {
+  const ids = (ctx.session.botMsgIds || []).slice();
   ctx.session.botMsgIds = [];
+  if (ids.length) {
+    // Fire-and-forget — kutilmasdan, parallel
+    Promise.all(ids.map(id =>
+      ctx.telegram.deleteMessage(ctx.chat.id, id).catch(() => {})
+    )).catch(() => {});
+  }
 }
 
 function trackMsg(ctx, msg) {
@@ -70,9 +73,10 @@ function trackMsg(ctx, msg) {
   ctx.session.botMsgIds.push(msg.message_id);
 }
 
-async function tryDeleteUserMsg(ctx) {
+// Foydalanuvchi xabarini fonda o'chirish
+function tryDeleteUserMsg(ctx) {
   if (ctx.message && ctx.message.message_id) {
-    try { await ctx.deleteMessage(ctx.message.message_id); } catch (e) {}
+    ctx.deleteMessage(ctx.message.message_id).catch(() => {});
   }
 }
 
@@ -87,7 +91,7 @@ survey.enter(async (ctx) => {
 });
 
 async function promptState(ctx, state) {
-  await deletePrevBot(ctx);
+  deletePrevBot(ctx); // Fonda, kutilmaydi — TEZ
   const lang = ctx.session.lang || 'uz';
   ctx.session.state = state;
   const opts = { parse_mode: 'Markdown' };
