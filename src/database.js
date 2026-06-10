@@ -2,7 +2,18 @@ const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
 
-const dataDir = process.env.DATA_DIR || path.join(__dirname, '..');
+// Railway Volume auto-detect: agar DATA_DIR berilmagan bo'lsa,
+// /app/data papkasi borligini tekshiradi (Railway Volume mount).
+// Bu baza restart'dan keyin saqlanib qolishini ta'minlaydi.
+let dataDir;
+if (process.env.DATA_DIR) {
+  dataDir = process.env.DATA_DIR;
+} else if (fs.existsSync('/app/data')) {
+  dataDir = '/app/data';
+} else {
+  dataDir = path.join(__dirname, '..');
+}
+console.log('DATA_DIR:', dataDir, '| ENV:', process.env.DATA_DIR || '(yo\'q)');
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 const dbPath = path.join(dataDir, 'data.db');
 console.log('DB yo\'li:', dbPath);
@@ -241,8 +252,11 @@ const dbApi = {
     const managers = this.getManagers();
     if (managers.length === 0) return null;
     const counter = parseInt(this.getSetting('manager_counter') || '0');
-    const manager = managers[counter % managers.length];
-    this.setSetting('manager_counter', String((counter + 1) % managers.length));
+    const idx = counter % managers.length;
+    const manager = managers[idx];
+    const newCounter = String((counter + 1) % managers.length);
+    this.setSetting('manager_counter', newCounter);
+    console.log(`📋 Menejer navbati: counter=${counter} idx=${idx} → ${manager.name} (keyingi counter=${newCounter})`);
     return manager.name;
   },
 };
