@@ -54,12 +54,10 @@ bot.use(async (ctx, next) => {
     } catch (e) {
       console.error('upsertUser xato:', e.message);
     }
-
     if (!dbApi.isAdmin(ctx.from.id) && dbApi.isBlocked(ctx.from.id)) {
       const lang = dbApi.getUserLanguage(ctx.from.id) || 'uz';
       return ctx.reply(t(lang, 'blocked'));
     }
-
     if (!dbApi.isAdmin(ctx.from.id) && dbApi.getSetting('bot_active') !== '1') {
       const lang = dbApi.getUserLanguage(ctx.from.id) || 'uz';
       return ctx.reply(t(lang, 'botInactive'));
@@ -88,9 +86,7 @@ bot.action(/^lang_(uz|ru)$/, async (ctx) => {
   if (ctx.session) ctx.session.lang = newLang;
   dbApi.setUserLanguage(ctx.from.id, newLang);
   await ctx.answerCbQuery(newLang === 'uz' ? "O'zbek tili tanlandi" : 'Выбран русский язык');
-  try {
-    await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
-  } catch (e) { /* ignore */ }
+  try { await ctx.editMessageReplyMarkup({ inline_keyboard: [] }); } catch (e) {}
   const msg = newLang === 'uz'
     ? "Til o'zgartirildi. Boshlash uchun /start"
     : 'Язык изменён. Для начала /start';
@@ -127,7 +123,6 @@ async function setBotCommands() {
       { command: 'til', description: "Tilni o'zgartirish / Сменить язык" },
       { command: 'help', description: "Yordam / Помощь" },
     ]);
-
     const admins = dbApi.getAdmins();
     for (const a of admins) {
       try {
@@ -142,57 +137,79 @@ async function setBotCommands() {
           ],
           { scope: { type: 'chat', chat_id: a.telegram_id } }
         );
-      } catch (e) {
-        // Foydalanuvchi botga yozmagan bo'lsa xato beradi — bu normal
-      }
+      } catch (e) { /* normal */ }
     }
   } catch (e) {
     console.error('setMyCommands xato:', e.message);
   }
 }
 
-// HTTP server — UptimeRobot uchun
+// HTTP server
 const app = express();
 const PORT = process.env.PORT || 3000;
+
 app.get('/', (req, res) => {
-  res.send('Bot is running! ✅ Riva Tour Bot — ' + new Date().toISOString());
+  res.send('Bot is running! Riva Tour Bot — ' + new Date().toISOString());
 });
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', uptime: process.uptime() });
 });
-app.listen(PORT, () => {
-  console.log('HTTP server listening on port:', PORT);
-});
 
-// Botni ishga tushirish (avval webhook tozalash)
+// ============ WEBHOOK YOKI POLLING ============
 async function startBot() {
+  // Eski webhook ni tozalash
   try {
     await bot.telegram.deleteWebhook({ drop_pending_updates: true });
-    console.log('Webhook tozalandi va eski xabarlar tashlandi');
+    console.log('Eski webhook tozalandi');
   } catch (e) {
     console.error('deleteWebhook xato:', e.message);
   }
 
-  // Eski polling instance to'xtashini kutish
-  await new Promise(function(r) { setTimeout(r, 5000); });
+  // Railway public URL ni aniqlash
+  const publicUrl = process.env.PUBLIC_URL
+    || process.env.WEBHOOK_URL
+    || (process.env.RAILWAY_PUBLIC_DOMAIN ? 'https://' + process.env.RAILWAY_PUBLIC_DOMAIN : null);
 
-  try {
-    await bot.launch({ dropPendingUpdates: true });
-    await setBotCommands();
-    console.log('Bot ishga tushdi!');
-    console.log('Guruh ID:', dbApi.getSetting('group_id') || process.env.GROUP_ID);
-    console.log('Super Admin:', process.env.SUPER_ADMIN_ID);
-  } catch (err) {
-    console.error('Bot ishga tushishda xato:', err.message);
-    // 30 soniya kutib qaytadan urinish
-    setTimeout(function() {
-      console.log('Qaytadan urinish...');
-      startBot().catch(function(e) { console.error('Qayta urinish xato:', e.message); });
-    }, 30000);
+  if (publicUrl) {
+    // WEBHOOK rejimi
+    const secretPath = '/telegraf/' + bot.secretPathComponent();
+    app.use(bot.webhookCallback(secretPath));
+
+    app.listen(PORT, async () => {
+      console.log('HTTP server (webhook) port:', PORT);
+      try {
+        await bot.telegram.setWebhook(publicUrl + secretPath, {
+          drop_pending_updates: true,
+        });
+        await setBotCommands();
+        console.log('✅ WEBHOOK rejimida ishga tushdi:', publicUrl + secretPath);
+        console.log('Guruh ID:', dbApi.getSetting('group_id') || process.env.GROUP_ID);
+        console.log('Super Admin:', process.env.SUPER_ADMIN_ID);
+      } catch (err) {
+        console.error('setWebhook xato:', err.message);
+      }
+    });
+  } else {
+    // POLLING rejimi (lokal yoki URL yo'q)
+    app.listen(PORT, () => {
+      console.log('HTTP server (polling) port:', PORT);
+    });
+
+    await new Promise(r => setTimeout(r, 3000));
+    try {
+      await bot.launch({ dropPendingUpdates: true });
+      await setBotCommands();
+      console.log('✅ POLLING rejimida ishga tushdi');
+      console.log('Guruh ID:', dbApi.getSetting('group_id') || process.env.GROUP_ID);
+      console.log('Super Admin:', process.env.SUPER_ADMIN_ID);
+    } catch (err) {
+      console.error('Bot launch xato:', err.message);
+      setTimeout(() => startBot().catch(e => console.error(e.message)), 30000);
+    }
   }
 }
 
 startBot();
 
-process.once('SIGINT', function() { bot.stop('SIGINT'); });
-process.once('SIGTERM', function() { bot.stop('SIGTERM'); });
+process.once('SIGINT', () => bot.stop('SIGINT'));
+process.once('SIGTERM', () => bot.stop('SIGTERM'));
