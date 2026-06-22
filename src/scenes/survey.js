@@ -54,31 +54,10 @@ function isValidNumber(text, min, max) {
   return num >= (min || 1) && num <= (max || 999);
 }
 
-// ============ XABARLARNI BOSHQARISH (FIRE-AND-FORGET) ============
-// Eski xabarlarni fonda o'chirish — kutilmasdan, parallel
-function deletePrevBot(ctx) {
-  const ids = (ctx.session.botMsgIds || []).slice();
-  ctx.session.botMsgIds = [];
-  if (ids.length) {
-    // Fire-and-forget — kutilmasdan, parallel
-    Promise.all(ids.map(id =>
-      ctx.telegram.deleteMessage(ctx.chat.id, id).catch(() => {})
-    )).catch(() => {});
-  }
-}
-
-function trackMsg(ctx, msg) {
-  if (!msg || !msg.message_id) return;
-  if (!ctx.session.botMsgIds) ctx.session.botMsgIds = [];
-  ctx.session.botMsgIds.push(msg.message_id);
-}
-
-// Foydalanuvchi xabarini fonda o'chirish
-function tryDeleteUserMsg(ctx) {
-  if (ctx.message && ctx.message.message_id) {
-    ctx.deleteMessage(ctx.message.message_id).catch(() => {});
-  }
-}
+// O'chirish funksiyalari (no-op) — tezlik uchun olib tashlandi
+function deletePrevBot(ctx) { /* no-op */ }
+function trackMsg(ctx, msg) { /* no-op */ }
+function tryDeleteUserMsg(ctx) { /* no-op */ }
 
 const survey = new Scenes.BaseScene(SURVEY_SCENE);
 
