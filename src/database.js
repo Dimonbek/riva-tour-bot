@@ -102,11 +102,17 @@ function seedContactTimes() {
 }
 
 function seedManagers() {
-  const count = db.prepare('SELECT COUNT(*) as c FROM managers').get().c;
-  if (count === 0) {
+  // Yangi to'g'ri ro'yxat — bot ishga tushganda sinxronlanadi
+  const desired = ['Jaloliddin', 'Sitora', 'Shohjahon', 'Sardor', 'Timur'];
+  const current = db.prepare('SELECT name FROM managers ORDER BY sort_order ASC, id ASC').all().map(r => r.name);
+  const same = current.length === desired.length && current.every((n, i) => n === desired[i]);
+  if (!same) {
+    db.prepare('DELETE FROM managers').run();
     const insert = db.prepare('INSERT INTO managers (name, sort_order) VALUES (?, ?)');
-    const list = ['Jaloliddin', 'Sitora', 'Shohjahon', 'Sardor', 'Temur', 'Muslima'];
-    list.forEach((name, i) => insert.run(name, i + 1));
+    desired.forEach((name, i) => insert.run(name, i + 1));
+    // Counter'ni 0 ga qaytarish (yangi ro'yxatdan boshlash)
+    db.prepare("INSERT INTO settings (key, value) VALUES ('manager_counter', '0') ON CONFLICT(key) DO UPDATE SET value = '0'").run();
+    console.log('Menejerlar ro\'yxati yangilandi:', desired.join(', '));
   }
 }
 
