@@ -1,0 +1,56 @@
+// CRM webhook integratsiyasi — leadni Revator CRM ga yuboradi.
+// Xatolik bo'lsa bot ishlashiga ta'sir qilmaydi (fire-and-forget).
+
+function peopleToNumber(peopleCount) {
+  if (!peopleCount) return 1;
+  const m = String(peopleCount).match(/\d+/);
+  return m ? parseInt(m[0], 10) : 1;
+}
+
+function childrenText(data) {
+  if (!data.has_children) return "Yo'q";
+  const parts = [];
+  if (data.children_count) parts.push(`${data.children_count} ta`);
+  if (data.children_ages) parts.push(`yosh: ${data.children_ages}`);
+  return `Ha${parts.length ? ' (' + parts.join(', ') + ')' : ''}`;
+}
+
+async function sendToCrm(ctx, data) {
+  const url = process.env.CRM_WEBHOOK_URL;
+  if (!url) return; // CRM ulanmagan — jimgina o'tkazib yuboramiz
+
+  const payload = {
+    phone: data.phone,
+    destination: data.destination,
+    travelDateText: data.travel_date,
+    travelers: peopleToNumber(data.people_count),
+    childrenText: childrenText(data),
+    contactTime: data.contact_time,
+    telegramUsername: ctx.from && ctx.from.username ? '@' + ctx.from.username : undefined,
+    telegramUserId: data.telegram_id,
+    managerSuggestion: data.manager || undefined,
+  };
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-webhook-secret': process.env.CRM_WEBHOOK_SECRET || '',
+      },
+      body: JSON.stringify(payload),
+      // 8 soniya timeout
+      signal: AbortSignal.timeout(8000),
+    });
+    if (res.ok) {
+      const j = await res.json().catch(() => ({}));
+      console.log('OK CRM ga:', j.leadId || res.status);
+    } else {
+      console.error('CRM webhook xato:', res.status, await res.text().catch(() => ''));
+    }
+  } catch (e) {
+    console.error('CRM webhook yuborilmadi:', e.message);
+  }
+}
+
+module.exports = { sendToCrm };
