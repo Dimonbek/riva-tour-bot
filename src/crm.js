@@ -15,9 +15,20 @@ function childrenText(data) {
   return `Ha${parts.length ? ' (' + parts.join(', ') + ')' : ''}`;
 }
 
+/** Startupда holatni ko'rsatish uchun */
+function crmStatus() {
+  const url = process.env.CRM_WEBHOOK_URL;
+  if (!url) return "O'CHIQ (CRM_WEBHOOK_URL yo'q)";
+  const secret = process.env.CRM_WEBHOOK_SECRET ? 'kalit bor' : 'KALIT YO\'Q';
+  return `YOQILGAN → ${url} (${secret})`;
+}
+
 async function sendToCrm(ctx, data) {
   const url = process.env.CRM_WEBHOOK_URL;
-  if (!url) return; // CRM ulanmagan — jimgina o'tkazib yuboramiz
+  if (!url) {
+    console.log("CRM: CRM_WEBHOOK_URL yo'q — lead yuborilmadi");
+    return;
+  }
 
   const payload = {
     phone: data.phone,
@@ -53,4 +64,4 @@ async function sendToCrm(ctx, data) {
   }
 }
 
-module.exports = { sendToCrm };
+module.exports = { sendToCrm, crmStatus };

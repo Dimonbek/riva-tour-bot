@@ -6,6 +6,7 @@ const { t } = require('./src/locales');
 const { survey, SURVEY_SCENE } = require('./src/scenes/survey');
 const { admin, ADMIN_SCENE } = require('./src/scenes/admin');
 const kb = require('./src/keyboards');
+const { crmStatus } = require('./src/crm');
 
 if (!process.env.BOT_TOKEN) {
   console.error('XATO: BOT_TOKEN .env faylda topilmadi!');
@@ -185,6 +186,7 @@ async function startBot() {
         console.log('✅ WEBHOOK rejimida ishga tushdi:', publicUrl + secretPath);
         console.log('Guruh ID:', dbApi.getSetting('group_id') || process.env.GROUP_ID);
         console.log('Super Admin:', process.env.SUPER_ADMIN_ID);
+        console.log('CRM integratsiya:', crmStatus());
       } catch (err) {
         console.error('setWebhook xato:', err.message);
       }
@@ -202,6 +204,7 @@ async function startBot() {
       console.log('✅ POLLING rejimida ishga tushdi');
       console.log('Guruh ID:', dbApi.getSetting('group_id') || process.env.GROUP_ID);
       console.log('Super Admin:', process.env.SUPER_ADMIN_ID);
+      console.log('CRM integratsiya:', crmStatus());
     } catch (err) {
       console.error('Bot launch xato:', err.message);
       setTimeout(() => startBot().catch(e => console.error(e.message)), 30000);
