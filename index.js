@@ -69,7 +69,11 @@ bot.use(async (ctx, next) => {
 
 bot.command('start', async (ctx) => {
   if (ctx.chat.type !== 'private') return;
+  // Reklama havolasi: t.me/bot?start=insta_iyul → "/start insta_iyul"
+  // surveyData scene kirishida tozalanadi, shuning uchun alohida saqlaymiz.
+  const payload = (ctx.message && ctx.message.text || '').split(/\s+/)[1];
   if (ctx.session) {
+    ctx.session.campaignCode = payload ? payload.trim().slice(0, 40) : null;
     ctx.session.surveyData = {};
     ctx.session.state = null;
   }

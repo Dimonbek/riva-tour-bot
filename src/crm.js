@@ -40,6 +40,7 @@ async function sendToCrm(ctx, data) {
     telegramUsername: ctx.from && ctx.from.username ? '@' + ctx.from.username : undefined,
     telegramUserId: data.telegram_id,
     managerSuggestion: data.manager || undefined,
+    campaignCode: data.campaign_code || undefined,
   };
 
   try {
@@ -55,7 +56,8 @@ async function sendToCrm(ctx, data) {
     });
     if (res.ok) {
       const j = await res.json().catch(() => ({}));
-      console.log('OK CRM ga:', j.leadId || res.status);
+      const camp = payload.campaignCode ? ` (kampaniya: ${payload.campaignCode})` : '';
+      console.log('OK CRM ga:', (j.leadId || res.status) + camp);
     } else {
       console.error('CRM webhook xato:', res.status, await res.text().catch(() => ''));
     }

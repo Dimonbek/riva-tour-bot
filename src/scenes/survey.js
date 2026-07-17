@@ -119,6 +119,9 @@ async function promptState(ctx, state) {
 }
 
 survey.command('start', async (ctx) => {
+  // Reklama havolasi bilan qayta kirsa — kampaniya kodini yangilaymiz
+  const payload = (ctx.message && ctx.message.text || '').split(/\s+/)[1];
+  if (payload) ctx.session.campaignCode = payload.trim().slice(0, 40);
   await ctx.scene.leave();
   return ctx.scene.enter(SURVEY_SCENE);
 });
@@ -378,6 +381,8 @@ async function finishSurvey(ctx) {
   const lang = ctx.session.lang || 'uz';
   ctx.session.surveyData.telegram_id = ctx.from.id;
   ctx.session.surveyData.language = lang;
+  // Qaysi reklamadan kelgani (t.me/bot?start=<kod>)
+  ctx.session.surveyData.campaign_code = ctx.session.campaignCode || null;
   const manager = dbApi.getNextManager();
   ctx.session.surveyData.manager = manager;
   try { dbApi.saveSurvey(ctx.session.surveyData); } catch (e) { console.error('DB:', e); }
