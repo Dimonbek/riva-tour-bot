@@ -1,0 +1,45 @@
+[Unit]
+Description=Riva Tour Telegram bot
+Documentation=https://github.com/Dimonbek/riva-tour-bot
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=rivatour
+Group=rivatour
+WorkingDirectory=/opt/riva-tour-bot
+ExecStart=/usr/bin/node index.js
+
+# Bu o'zgaruvchilar .env dan USTUN turadi (dotenv mavjud process.env ni bosmaydi).
+# DATA_DIR: baza loyiha papkasidan TASHQARIDA — qayta deploy uni yo'qotmaydi.
+# PORT: 3000 ni shu serverda dilrabo-bot egallagan, shuning uchun 3002.
+Environment=NODE_ENV=production
+Environment=DATA_DIR=/var/lib/riva-tour-bot
+Environment=PORT=3002
+
+Restart=always
+RestartSec=10
+
+# Telegraf long-polling SIGTERM dan keyin darrov tugamaydi; cheksiz
+# kutmaslik uchun chegara qo'yamiz, aks holda restart 90 soniya cho'ziladi.
+TimeoutStopSec=15
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=riva-tour-bot
+
+# ---- Xavfsizlik ----
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+# Yozish ruxsati faqat shu ikki joyga: baza va Excel eksport papkasi
+ReadWritePaths=/var/lib/riva-tour-bot /opt/riva-tour-bot/exports
+
+[Install]
+WantedBy=multi-user.target

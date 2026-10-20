@@ -153,6 +153,10 @@ async function setBotCommands() {
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// To'xtatishda yopish uchun saqlanadi — aks holda ochiq HTTP server Node'ni
+// ushlab turadi va systemd protsessni SIGKILL bilan majburan o'ldiradi.
+let server = null;
+
 app.get('/', (req, res) => {
   res.send('Bot is running! Riva Tour Bot — ' + new Date().toISOString());
 });
@@ -180,7 +184,7 @@ async function startBot() {
     const secretPath = '/telegraf/' + bot.secretPathComponent();
     app.use(bot.webhookCallback(secretPath));
 
-    app.listen(PORT, async () => {
+    server = app.listen(PORT, async () => {
       console.log('HTTP server (webhook) port:', PORT);
       try {
         await bot.telegram.setWebhook(publicUrl + secretPath, {
@@ -196,27 +200,37 @@ async function startBot() {
       }
     });
   } else {
-    // POLLING rejimi (lokal yoki URL yo'q)
-    app.listen(PORT, () => {
+    // POLLING rejimi (lokal yoki URL yo'q) — domen, nginx va SSL kerak emas
+    server = app.listen(PORT, () => {
       console.log('HTTP server (polling) port:', PORT);
     });
 
     await new Promise(r => setTimeout(r, 3000));
-    try {
-      await bot.launch({ dropPendingUpdates: true });
+    // Diqqat: telegraf'da launch() polling to'xtaguncha resolve BO'LMAYDI.
+    // Shuning uchun kutmaymiz — ishga tushgani onLaunch callback orqali bilinadi,
+    // aks holda setBotCommands() hech qachon ishlamaydi.
+    bot.launch({ dropPendingUpdates: true }, async () => {
       await setBotCommands();
       console.log('✅ POLLING rejimida ishga tushdi');
       console.log('Guruh ID:', dbApi.getSetting('group_id') || process.env.GROUP_ID);
       console.log('Super Admin:', process.env.SUPER_ADMIN_ID);
       console.log('CRM integratsiya:', crmStatus());
-    } catch (err) {
+    }).catch((err) => {
       console.error('Bot launch xato:', err.message);
       setTimeout(() => startBot().catch(e => console.error(e.message)), 30000);
-    }
+    });
   }
 }
 
 startBot();
 
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
+// Bot ham, HTTP server ham yopilishi shart — shundagina Node o'zi chiqadi va
+// systemd kutishga majbur bo'lmaydi (SQLite yozuvi yarmida uzilmaydi).
+function shutdown(signal) {
+  console.log("To'xtatilmoqda:", signal);
+  try { bot.stop(signal); } catch (e) { /* allaqachon to'xtagan bo'lishi mumkin */ }
+  if (server) server.close(() => console.log('HTTP server yopildi'));
+}
+
+process.once('SIGINT', () => shutdown('SIGINT'));
+process.once('SIGTERM', () => shutdown('SIGTERM'));
